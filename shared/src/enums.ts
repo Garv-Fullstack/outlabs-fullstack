@@ -1,0 +1,31 @@
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN'
+}
+
+export enum EmailStatus {
+  SCHEDULED = 'SCHEDULED',
+  PROCESSING = 'PROCESSING',
+  SENT = 'SENT',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+  RATE_LIMITED_DELAYED = 'RATE_LIMITED_DELAYED'
+}
+
+export enum OutboxStatus {
+  PENDING = 'PENDING',
+  PROCESSING = 'PROCESSING',
+  ENQUEUED = 'ENQUEUED',
+  FAILED = 'FAILED'
+}
+
+export enum SlackStatus {
+  ACTIVE = 'ACTIVE',
+  DISCONNECTED = 'DISCONNECTED'
+}
+
+export enum RateLimitAction {
+  ALLOWED = 'ALLOWED',
+  MIN_DELAY_BREACH = 'MIN_DELAY_BREACH',
+  HOURLY_LIMIT_EXCEEDED = 'HOURLY_LIMIT_EXCEEDED'
+}
