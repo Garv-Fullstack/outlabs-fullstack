@@ -1,101 +1,319 @@
-# ReachInbox Cold Email Scheduling & Distributed Delivery Engine
+# Outlabs — Cold Email Scheduling & Distributed Delivery Engine
 
-A robust, enterprise-grade multi-tenant cold email scheduling and delivery platform designed for high-throughput batch execution, sender-specific rate limiting, crash-resilient delayed scheduling via BullMQ and Redis, and real-time observability.
+A full-stack, multi-tenant cold email scheduling and distributed delivery platform built with **Node.js, Express, TypeScript, PostgreSQL, Prisma, Redis, BullMQ, React, Vite, and Elasticsearch**.
+
+Outlabs is designed around reliable scheduled delivery, transactional consistency, sender-aware processing, rate limiting, failure recovery, credential protection, and operational observability.
 
 ---
 
-## 1. Monorepo Architecture
+## 1. Architecture
 
+```text
+outlabs-fullstack/
+│
+├── backend/                 # Express REST API, services, workers & integrations
+│   ├── prisma/              # Prisma database schema
+│   ├── src/
+│   │   ├── auth/            # Google OAuth integration
+│   │   ├── controllers/     # HTTP controllers
+│   │   ├── email/           # SMTP infrastructure
+│   │   ├── integrations/    # External integrations
+│   │   ├── middleware/      # Authentication, errors, correlation IDs
+│   │   ├── queues/          # BullMQ queues
+│   │   ├── rate-limit/      # Rate limiting infrastructure
+│   │   ├── repositories/    # Database & Redis access
+│   │   ├── routes/          # API routes
+│   │   ├── search/          # Elasticsearch integration
+│   │   ├── services/        # Application services
+│   │   ├── utils/           # Crypto, errors, logging
+│   │   └── workers/         # Delivery workers & transports
+│   └── tests/               # Backend automated tests
+│
+├── frontend/                # React + Vite frontend application
+│   ├── src/
+│   │   ├── api/             # Backend API clients
+│   │   ├── components/      # Reusable UI components
+│   │   ├── context/         # Application state/context
+│   │   ├── pages/           # Application pages
+│   │   ├── types/           # Frontend TypeScript types
+│   │   └── utils/           # Frontend utilities
+│   └── tests/               # Frontend automated tests
+│
+├── shared/                  # Shared TypeScript types & enums
+├── docker-compose.yml       # Local infrastructure services
+├── .env.example             # Environment configuration template
+├── package.json              # Workspace configuration
+├── tsconfig.base.json        # Shared TypeScript configuration
+├── vitest.workspace.ts       # Test workspace configuration
+└── README.md                 # Project documentation
 ```
-reachinbox-monorepo/
-├── backend/            # Express.js REST API & BullMQ Worker Daemon (TypeScript)
-├── frontend/           # React 18 + Vite SPA UI (TypeScript + Tailwind CSS - Milestone 4)
-├── shared/             # Shared DTOs, Enums, and TypeScript interfaces
-├── docker-compose.yml  # Local development stack (PostgreSQL, Redis, Elasticsearch)
-├── .env.example        # Environment configuration template
-└── README.md           # Documentation
+
+---
+
+## 2. Core Capabilities
+
+### Persistence
+
+- PostgreSQL relational database
+- Prisma ORM
+- Multi-tenant data model
+- Campaign and delivery persistence
+- Sender account persistence
+- Transactional outbox persistence
+- Rate-limit event persistence
+- Slack integration persistence
+
+### Transactional Outbox
+
+Outlabs uses a transactional outbox architecture to reliably persist application events before asynchronous processing.
+
+This helps prevent inconsistencies where database state is committed but an associated asynchronous event is lost.
+
+### Distributed Delivery
+
+- BullMQ-based asynchronous processing
+- Redis-backed queues
+- Delayed/scheduled jobs
+- Dedicated delivery worker
+- Worker lifecycle management
+- SMTP transport abstraction
+- Delivery state management
+- Failure and recovery handling
+
+### Rate Limiting
+
+- Redis-backed rate limiting
+- Sender-aware processing
+- Rate-limit event tracking
+- Protection against excessive delivery throughput
+
+### Authentication & Security
+
+- Authentication middleware
+- Google OAuth 2.0 integration
+- JWT-based application authentication
+- Environment configuration validation
+- AES-256-GCM credential encryption
+- Structured error handling
+- Helmet security headers
+- CORS protection
+- Request correlation IDs
+- Sensitive-value logging redaction
+
+### Integrations
+
+- Google OAuth
+- Slack OAuth
+- Slack notifications/integration
+- SMTP delivery
+- Redis
+- PostgreSQL
+- Elasticsearch
+
+### Search & Observability
+
+- Elasticsearch client infrastructure
+- Email indexing pipeline
+- Structured JSON logging using Pino
+- Correlation IDs
+- Health monitoring
+- Database and Redis health probes
+- Delivery monitoring
+- Failure-injection testing
+
+### Frontend
+
+The React frontend provides application interfaces for:
+
+- Authentication
+- Dashboard
+- Campaign management
+- Campaign composition
+- Recipient CSV upload and preview
+- Scheduling configuration
+- Monitoring
+- Sender management
+- Slack settings
+
+---
+
+## 3. Project Structure
+
+### Backend
+
+The backend follows a layered architecture:
+
+```text
+HTTP Request
+     │
+     ▼
+   Routes
+     │
+     ▼
+Controllers
+     │
+     ▼
+  Services
+     │
+     ├──────────────► Repositories ─────► PostgreSQL
+     │
+     ├──────────────► Redis / BullMQ
+     │
+     └──────────────► External Integrations
+```
+
+Asynchronous delivery follows a separate worker path:
+
+```text
+Campaign
+   │
+   ▼
+Transactional Outbox
+   │
+   ▼
+BullMQ / Redis
+   │
+   ▼
+Delivery Worker
+   │
+   ▼
+SMTP Transport
+   │
+   ▼
+Recipient
 ```
 
 ---
 
-## 2. Milestone 1 Implemented Foundations
+## 4. Technology Stack
 
-* **Persistence Layer**: PostgreSQL 15+ relational schema managed via Prisma ORM (`users`, `sender_accounts`, `email_campaigns`, `email_deliveries`, `outbox_events`, `slack_integrations`, `rate_limit_events`).
-* **Transactional Outbox Foundation**: Durable `outbox_events` table for resilient event publishing without distributed transaction failure risks.
-* **Redis Client Infrastructure**: `ioredis` connection lifecycle management, healthcheck probes, and BullMQ-compliant options (`maxRetriesPerRequest: null`).
-* **Express Skeleton**: Clean layered architecture with Helmet security headers, CORS origin protection, 10MB payload size limits, request correlation IDs, and centralized error handling.
-* **Configuration Validation**: Fail-fast environment variable validation using Zod with secret masking for diagnostic logs.
-* **Credential Protection**: AES-256-GCM encryption/decryption utilities for sensitive tokens and passwords at rest.
-* **Observability**: Structured JSON logger (Pino) with automated secret redaction for sensitive fields.
-* **Truthful Health Endpoint**: `GET /health` with parallel database and Redis connection probing and memory statistics.
-
----
-
-## 3. Future Milestones (Planned)
-
-* **Milestone 2**: BullMQ Delayed Queue, Dedicated Worker Process, Redis Lua Rate Limiter, and Ethereal SMTP Connection Pool.
-* **Milestone 3**: Google OAuth 2.0, Slack OAuth 2.0 Integration & Rate-Limit Alerts, and Elasticsearch 8.x Ingestion Pipeline.
-* **Milestone 4**: React 18 Dashboard, CSV Recipient Parser, Campaign Composer, Scheduled/Sent Tables, and Bull Board UI.
-* **Milestone 5**: 1,000+ Recipient End-to-End Stress Test, Chaos Recovery Verification, and Demo Video.
-
----
-
-## 4. Prerequisites
-
-* **Node.js**: `v20.x` or `v22.x` or `v24.x` (Tested on `v24.16.0`)
-* **npm**: `v10.x` or `v11.x`
-* **Docker & Docker Compose** (Optional for containerized PostgreSQL, Redis, Elasticsearch)
+| Layer                 | Technology             |
+| --------------------- | ---------------------- |
+| Backend               | Node.js + Express      |
+| Language              | TypeScript             |
+| Database              | PostgreSQL             |
+| ORM                   | Prisma                 |
+| Queue                 | BullMQ                 |
+| Cache / Queue Backend | Redis                  |
+| Search                | Elasticsearch          |
+| Email                 | SMTP                   |
+| Authentication        | JWT + Google OAuth 2.0 |
+| Notifications         | Slack                  |
+| Frontend              | React + Vite           |
+| Testing               | Vitest                 |
+| Logging               | Pino                   |
+| Containerization      | Docker Compose         |
 
 ---
 
-## 5. Getting Started & Installation
+## 5. Prerequisites
 
-### Step 1: Install Dependencies
+- **Node.js:** v24.x recommended
+- **npm:** v10.x or later
+- **Docker Desktop:** recommended for local PostgreSQL, Redis, and Elasticsearch
+- **Git**
+
+The project has been tested with:
+
+```text
+Node.js v24.16.0
+```
+
+---
+
+## 6. Installation
+
+### Step 1 — Clone the repository
+
+```bash
+git clone https://github.com/Garv-Fullstack/outlabs-fullstack.git
+cd outlabs-fullstack
+```
+
+### Step 2 — Install dependencies
+
 ```bash
 npm install
 ```
 
-### Step 2: Configure Environment
-Copy the `.env.example` file to `.env`:
+### Step 3 — Configure environment variables
+
+Create a local `.env` file from the provided template.
+
 ```bash
 cp .env.example .env
 ```
-Ensure `DATABASE_URL`, `JWT_SECRET`, and `ENCRYPTION_KEY` are configured.
 
-### Step 3: Run Infrastructure (Docker)
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Configure the required environment variables, including database, authentication, encryption, Redis, SMTP, and integration credentials as required by the selected functionality.
+
+**Never commit `.env` or real credentials to Git.**
+
+### Step 4 — Start local infrastructure
+
 ```bash
 docker compose up -d
 ```
 
-### Step 4: Generate Prisma Client & Migrate Database
+This starts the infrastructure services defined by the project's Docker Compose configuration.
+
+### Step 5 — Generate Prisma Client
+
 ```bash
 npm run prisma:generate
-# To apply migrations against active PostgreSQL instance:
+```
+
+### Step 6 — Apply the database schema/migrations
+
+```bash
 npm run prisma:migrate --workspace=backend
 ```
 
-### Step 5: Build Packages
+### Step 7 — Build the project
+
 ```bash
 npm run build
 ```
 
-### Step 6: Run Automated Tests
+### Step 8 — Run automated tests
+
 ```bash
 npm run test
 ```
 
-### Step 7: Start Development Server
+### Step 9 — Start the backend in development mode
+
 ```bash
 npm run dev:backend
 ```
 
 ---
 
-## 6. Health Check API
+## 7. Health Check API
 
-`GET /health`
+### Endpoint
 
-**Sample Response (200 OK / 503 Degraded):**
+```http
+GET /health
+```
+
+The health endpoint reports application and infrastructure status, including:
+
+- Application status
+- Database connectivity
+- Redis connectivity
+- Service latency
+- Process uptime
+- Memory statistics
+- Request correlation ID
+
+### Example response
+
 ```json
 {
   "success": true,
@@ -124,8 +342,146 @@ npm run dev:backend
 }
 ```
 
+If required infrastructure is unavailable, the application can remain reachable while reporting degraded/unhealthy dependency status.
+
 ---
 
-## 7. Known Environment Limitations
+## 8. Testing
 
-* When running in an environment without an active Docker daemon or running PostgreSQL/Redis instances, the `/health` endpoint truthy status reports `services.database.status: "down"` and `services.redis.status: "down"` and returns `status: "unhealthy"` with HTTP 503 while the Express application remains fully operational.
+The repository contains automated backend and frontend tests covering areas such as:
+
+- Authentication
+- Campaign transactions
+- Concurrency
+- Configuration validation
+- Credential encryption
+- Delivery state transitions
+- Elasticsearch integration
+- Error handling
+- Failure injection
+- Google authentication
+- Health checks
+- Middleware
+- Negative scenarios
+- Outbox processing
+- API prerequisites
+- Rate limiting
+- Redis infrastructure
+- Scheduling
+- Slack integration
+- SMTP transport
+- Tenant isolation
+- Frontend authentication flows
+- Campaign features
+- CSV parsing
+- Settings flows
+
+Run the complete test suite with:
+
+```bash
+npm run test
+```
+
+---
+
+## 9. Security
+
+Outlabs is designed with security boundaries around credentials and tenant data.
+
+Important security mechanisms include:
+
+- Environment-based secrets
+- AES-256-GCM credential encryption
+- Secret redaction in logs
+- JWT authentication
+- Google OAuth integration
+- Authentication middleware
+- Tenant-isolation testing
+- CORS protection
+- Helmet security headers
+- Request correlation IDs
+- Centralized error handling
+
+### Credential Safety
+
+Never commit:
+
+```text
+.env
+real API tokens
+OAuth secrets
+SMTP passwords
+Slack tokens
+database credentials
+encryption keys
+JWT secrets
+```
+
+Use `.env.example` as the public configuration template.
+
+---
+
+## 10. Development Principles
+
+The project emphasizes:
+
+- Clear separation of concerns
+- Transactional consistency
+- Reliable asynchronous processing
+- Failure recovery
+- Explicit delivery state transitions
+- Tenant isolation
+- Secure credential handling
+- Observable infrastructure
+- Automated testing
+- Deterministic error handling
+
+The architecture is intended to support reliable distributed email delivery rather than treating email sending as a simple synchronous HTTP operation.
+
+---
+
+## 11. Current Status
+
+### Implemented
+
+- [x] Monorepo structure
+- [x] PostgreSQL + Prisma foundation
+- [x] Redis infrastructure
+- [x] Express REST API
+- [x] Environment validation
+- [x] Credential encryption
+- [x] Structured logging
+- [x] Health monitoring
+- [x] Transactional outbox
+- [x] BullMQ queues
+- [x] Delivery worker
+- [x] SMTP transport
+- [x] Rate limiting
+- [x] Google OAuth
+- [x] Slack integration
+- [x] Elasticsearch integration
+- [x] React frontend
+- [x] Campaign management
+- [x] CSV recipient parsing
+- [x] Scheduling configuration
+- [x] Monitoring interface
+- [x] Sender management
+- [x] Automated backend tests
+- [x] Automated frontend tests
+- [x] Failure and negative-path testing
+
+---
+
+## 12. Repository
+
+**GitHub:** `Garv-Fullstack/outlabs-fullstack`
+
+The `main` branch contains the current project baseline.
+
+---
+
+## 13. License
+
+This project is currently intended as a personal/educational full-stack engineering project.
+
+License terms can be added here when the project is prepared for public distribution.
