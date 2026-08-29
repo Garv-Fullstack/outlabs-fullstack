@@ -17,6 +17,10 @@ export class WorkerLifecycleManager {
     this.customRedisClient = customRedisClient || null;
   }
 
+  public getProcessor(): DeliveryProcessor {
+    return this.processor;
+  }
+
   public startWorker(concurrency = config.WORKER_CONCURRENCY): Worker<EmailJobPayload> {
     if (this.worker) {
       return this.worker;

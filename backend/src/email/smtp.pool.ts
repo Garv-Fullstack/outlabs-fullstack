@@ -29,6 +29,13 @@ export class SmtpTransporterPool {
    * Retrieves or creates a pooled Nodemailer transporter for the sender
    */
   public getTransporter(sender: SenderSmtpConfig): Transporter {
+    if (!sender || !sender.smtpHost || !sender.smtpPort || !sender.smtpUser || !sender.smtpPassEncrypted) {
+      throw new NonRetryableDeliveryError(
+        `Incomplete SMTP configuration for sender ${sender?.id || sender?.email || 'unknown'}`,
+        'INVALID_SMTP_CONFIG'
+      );
+    }
+
     const cacheKey = SmtpTransporterPool.getCacheKey(sender);
     const existing = this.pool.get(sender.id);
 

@@ -4,17 +4,33 @@ import { rateLimiter, DistributedRateLimiter } from '../rate-limit/rate-limiter.
 import { emailQueueManager, EmailDeliveryQueueManager } from '../queues/email.queue.js';
 import { EmailJobPayload } from '../queues/queue.types.js';
 import { IDeliveryTransport, MockDeliveryTransport } from './transports/delivery.transport.js';
+import { nodemailerTransport } from './transports/smtp.transport.js';
 import { classifySmtpError, NonRetryableDeliveryError } from '../email/smtp.errors.js';
 import { slackService } from '../integrations/slack.service.js';
 import { emailIndexer } from '../search/email.indexer.js';
 import { EmailStatus, RateLimitAction } from '@reachinbox/shared';
 import { logger } from '../utils/logger.js';
+import { config } from '../config/env.js';
 
 export interface ProcessJobResult {
   deliveryId: string;
   status: 'SENT' | 'SKIPPED' | 'RATE_LIMITED_DELAYED' | 'FAILED';
   messageId?: string;
   reason?: string;
+}
+
+/**
+ * Resolves the appropriate default delivery transport according to runtime environment
+ */
+export function resolveDefaultTransport(env = config.NODE_ENV): IDeliveryTransport {
+  if (env === 'production') {
+    return nodemailerTransport;
+  }
+  if (env === 'test') {
+    return new MockDeliveryTransport();
+  }
+  // development / staging defaults to nodemailerTransport (live Ethereal SMTP pool)
+  return nodemailerTransport;
 }
 
 export class DeliveryProcessor {
@@ -29,10 +45,25 @@ export class DeliveryProcessor {
   ) {
     this.limiter = customLimiter || rateLimiter;
     this.queueManager = customQueueManager || emailQueueManager;
-    this.transport = customTransport || new MockDeliveryTransport();
+
+    if (customTransport) {
+      if (config.NODE_ENV === 'production' && customTransport instanceof MockDeliveryTransport) {
+        throw new Error('SECURITY VIOLATION: MockDeliveryTransport cannot be used in production environment');
+      }
+      this.transport = customTransport;
+    } else {
+      this.transport = resolveDefaultTransport();
+    }
+  }
+
+  public getTransport(): IDeliveryTransport {
+    return this.transport;
   }
 
   public setTransport(transport: IDeliveryTransport): void {
+    if (config.NODE_ENV === 'production' && transport instanceof MockDeliveryTransport) {
+      throw new Error('SECURITY VIOLATION: MockDeliveryTransport cannot be used in production environment');
+    }
     this.transport = transport;
   }
 
@@ -59,9 +90,9 @@ export class DeliveryProcessor {
       }
     });
 
-    if (!delivery) {
-      logger.error({ deliveryId }, 'Delivery record not found in database');
-      return { deliveryId, status: 'SKIPPED', reason: 'Record not found' };
+    if (!delivery || !delivery.sender || !delivery.campaign) {
+      logger.error({ deliveryId }, 'Delivery record or required relation (sender/campaign) not found in database');
+      return { deliveryId, status: 'SKIPPED', reason: 'Record or relation not found' };
     }
 
     // 2. State Guard: Check if job is in a valid runnable state

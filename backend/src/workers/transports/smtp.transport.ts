@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 import { IDeliveryTransport, SendEmailOptions, DeliveryResult } from './delivery.transport.js';
 import { smtpPool, SmtpTransporterPool, SenderSmtpConfig } from '../../email/smtp.pool.js';
-import { classifySmtpError } from '../../email/smtp.errors.js';
+import { NonRetryableDeliveryError, classifySmtpError } from '../../email/smtp.errors.js';
 import { logger } from '../../utils/logger.js';
 
 export interface SmtpTransportOptions extends SendEmailOptions {
@@ -17,7 +17,14 @@ export class NodemailerSmtpTransport implements IDeliveryTransport {
 
   public async send(options: SendEmailOptions, senderConfig?: SenderSmtpConfig): Promise<DeliveryResult> {
     if (!senderConfig) {
-      throw new Error('Sender configuration required for live SMTP transport');
+      throw new NonRetryableDeliveryError('Sender configuration required for live SMTP transport', 'MISSING_SENDER_CONFIG');
+    }
+
+    if (!senderConfig.smtpHost || !senderConfig.smtpPort || !senderConfig.smtpUser || !senderConfig.smtpPassEncrypted) {
+      throw new NonRetryableDeliveryError(
+        `Incomplete SMTP configuration for sender ${senderConfig.id || senderConfig.email || 'unknown'}: host, port, user, and password are required`,
+        'INVALID_SMTP_CONFIG'
+      );
     }
 
     try {
