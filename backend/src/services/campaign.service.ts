@@ -1,10 +1,12 @@
 import crypto from 'crypto';
 import { prisma } from '../repositories/prisma.js';
 import { outboxService, OutboxService } from './outbox.service.js';
+import { emailQueueManager } from '../queues/email.queue.js';
 import { EmailJobPayload } from '../queues/queue.types.js';
 import { EmailStatus, OutboxStatus } from '@reachinbox/shared';
 import { NotFoundError, ConflictError, ValidationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+
 
 export interface CreateCampaignRecipient {
   email: string;
@@ -854,17 +856,14 @@ export class CampaignService {
         userId: delivery.userId,
         senderId: delivery.senderId,
         recipientEmail: delivery.recipientEmail,
-        recipientName: delivery.recipientName || undefined,
-        subject: delivery.campaign.subject,
-        bodyText: delivery.campaign.bodyText,
-        bodyHtml: delivery.campaign.bodyHtml || undefined,
-        trackingToken: delivery.trackingToken,
+        recipientName: delivery.recipientName,
         scheduledFor: scheduledFor.toISOString(),
         idempotencyKey: delivery.idempotencyKey
       }, 0);
     } catch (queueErr: any) {
       logger.error({ deliveryId, queueErr: queueErr.message }, 'Failed to enqueue retry job in BullMQ');
     }
+
 
     return {
       id: updated.id,
@@ -1011,7 +1010,7 @@ export class CampaignService {
     const now = Date.now();
 
     for (let i = 0; i < pausedDeliveries.length; i++) {
-      const del = pausedDeliveries[i];
+      const del = pausedDeliveries[i]!;
       const targetTime = new Date(now + (i * campaign.delayBetweenEmailsSeconds * 1000));
 
       await prisma.emailDelivery.update({
@@ -1030,11 +1029,7 @@ export class CampaignService {
           userId: del.userId,
           senderId: del.senderId,
           recipientEmail: del.recipientEmail,
-          recipientName: del.recipientName || undefined,
-          subject: campaign.subject,
-          bodyText: campaign.bodyText,
-          bodyHtml: campaign.bodyHtml || undefined,
-          trackingToken: del.trackingToken,
+          recipientName: del.recipientName,
           scheduledFor: targetTime.toISOString(),
           idempotencyKey: del.idempotencyKey
         }, Math.max(0, targetTime.getTime() - now));
@@ -1042,6 +1037,7 @@ export class CampaignService {
       } catch (err) {
         logger.error({ deliveryId: del.id, err }, 'Failed to re-enqueue delivery on campaign resume');
       }
+
     }
 
     return {
@@ -1049,6 +1045,7 @@ export class CampaignService {
       status: 'Active',
       resumedCount: reScheduledCount
     };
+
   }
 
   /**

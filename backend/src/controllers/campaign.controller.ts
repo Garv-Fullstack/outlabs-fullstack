@@ -233,7 +233,7 @@ export class CampaignController {
   public async updateCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const campaignId = req.params.id;
+      const campaignId = req.params['id']!;
       const result = await campaignService.updateCampaign(userId, campaignId, req.body);
 
       res.status(200).json({
@@ -252,7 +252,7 @@ export class CampaignController {
   public async pauseCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const campaignId = req.params.id;
+      const campaignId = req.params['id']!;
       const result = await campaignService.pauseCampaign(userId, campaignId);
 
       res.status(200).json({
@@ -271,7 +271,7 @@ export class CampaignController {
   public async resumeCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const campaignId = req.params.id;
+      const campaignId = req.params['id']!;
       const result = await campaignService.resumeCampaign(userId, campaignId);
 
       res.status(200).json({
@@ -290,7 +290,7 @@ export class CampaignController {
   public async cancelCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const campaignId = req.params.id;
+      const campaignId = req.params['id']!;
       const result = await campaignService.cancelCampaign(userId, campaignId);
 
       res.status(200).json({
@@ -309,7 +309,7 @@ export class CampaignController {
   public async deleteCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const campaignId = req.params.id;
+      const campaignId = req.params['id']!;
       const result = await campaignService.deleteCampaign(userId, campaignId);
 
       res.status(200).json({
@@ -328,7 +328,7 @@ export class CampaignController {
   public async retryDelivery(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const deliveryId = req.params.id;
+      const deliveryId = req.params['id']!;
       const result = await campaignService.retryDelivery(userId, deliveryId);
 
       res.status(200).json({
@@ -347,7 +347,7 @@ export class CampaignController {
   public async deleteDelivery(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-      const deliveryId = req.params.id;
+      const deliveryId = req.params['id']!;
       const result = await campaignService.deleteDelivery(userId, deliveryId);
 
       res.status(200).json({
@@ -362,3 +362,4 @@ export class CampaignController {
 }
 
 export const campaignController = new CampaignController();
+
