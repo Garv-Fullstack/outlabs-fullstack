@@ -72,7 +72,9 @@ export class AuthController {
       res.cookie('reachinbox_session', jwtToken, {
         httpOnly: true,
         secure: config.NODE_ENV === 'production',
-        sameSite: 'lax',
+        // The SPA and API are separate origins in production, so browser fetches
+        // need an explicitly cross-site session cookie. Keep Lax locally.
+        sameSite: config.NODE_ENV === 'production' ? 'none' : 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
       });
 

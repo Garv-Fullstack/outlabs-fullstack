@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -166,6 +166,34 @@ describe('Google OAuth & JWT Authentication Tests', () => {
 
       expect(res.status).toBe(302);
       expect(decodeURIComponent(res.headers.location)).toContain('Authorization code missing');
+    });
+
+    it('should issue a Secure, HTTP-only, cross-site session cookie in production', async () => {
+      const app = express();
+      app.use(cookieParser());
+      const { authController } = await import('../src/controllers/auth.controller.js');
+      const { googleAuthService } = await import('../src/auth/google.auth.js');
+      const { config } = await import('../src/config/env.js');
+      const originalNodeEnv = config.NODE_ENV;
+      const exchangeSpy = vi.spyOn(googleAuthService, 'exchangeCodeAndUpsertUser').mockResolvedValue(sampleUser);
+
+      config.NODE_ENV = 'production';
+      app.get('/api/auth/google/callback', (req, res, next) => authController.handleGoogleCallback(req, res, next));
+
+      try {
+        const res = await request(app)
+          .get('/api/auth/google/callback?code=mockcode123&state=matchedstate')
+          .set('Cookie', 'oauth_state_google=matchedstate');
+
+        const sessionCookie = res.headers['set-cookie']?.find((cookie) => cookie.startsWith('reachinbox_session='));
+        expect(res.status).toBe(302);
+        expect(sessionCookie).toContain('HttpOnly');
+        expect(sessionCookie).toContain('Secure');
+        expect(sessionCookie).toContain('SameSite=None');
+      } finally {
+        config.NODE_ENV = originalNodeEnv;
+        exchangeSpy.mockRestore();
+      }
     });
   });
 });
