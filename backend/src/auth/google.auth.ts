@@ -14,21 +14,37 @@ export interface UserSessionPayload {
 }
 
 export class GoogleAuthService {
-  private oauth2Client: OAuth2Client;
-
-  constructor() {
-    this.oauth2Client = new OAuth2Client(
-      process.env['GOOGLE_CLIENT_ID'] || 'mock-client-id',
-      process.env['GOOGLE_CLIENT_SECRET'] || 'mock-client-secret',
-      process.env['GOOGLE_CALLBACK_URL'] || 'http://localhost:5000/api/auth/google/callback'
+  /**
+   * Checks whether Google OAuth is configured with real credentials
+   */
+  public isConfigured(): boolean {
+    const clientId = config.GOOGLE_CLIENT_ID || process.env['GOOGLE_CLIENT_ID'] || '';
+    const clientSecret = config.GOOGLE_CLIENT_SECRET || process.env['GOOGLE_CLIENT_SECRET'] || '';
+    return Boolean(
+      clientId &&
+      clientSecret &&
+      !clientId.includes('mock-client-id') &&
+      !clientId.includes('your_google_client_id')
     );
+  }
+
+  /**
+   * Instantiates or returns configured OAuth2Client instance
+   */
+  public getOAuth2Client(): OAuth2Client {
+    const clientId = config.GOOGLE_CLIENT_ID || process.env['GOOGLE_CLIENT_ID'] || '';
+    const clientSecret = config.GOOGLE_CLIENT_SECRET || process.env['GOOGLE_CLIENT_SECRET'] || '';
+    const redirectUri = config.GOOGLE_CALLBACK_URL || process.env['GOOGLE_CALLBACK_URL'] || 'http://localhost:5000/api/auth/google/callback';
+
+    return new OAuth2Client(clientId, clientSecret, redirectUri);
   }
 
   /**
    * Generates Google OAuth authorization URL with CSRF state
    */
   public generateAuthUrl(state: string): string {
-    return this.oauth2Client.generateAuthUrl({
+    const client = this.getOAuth2Client();
+    return client.generateAuthUrl({
       access_type: 'offline',
       prompt: 'consent',
       scope: [
@@ -44,12 +60,18 @@ export class GoogleAuthService {
    */
   public async exchangeCodeAndUpsertUser(code: string): Promise<UserSessionPayload> {
     try {
-      const { tokens } = await this.oauth2Client.getToken(code);
-      this.oauth2Client.setCredentials(tokens);
+      const client = this.getOAuth2Client();
+      const { tokens } = await client.getToken(code);
+      client.setCredentials(tokens);
 
-      const ticket = await this.oauth2Client.verifyIdToken({
-        idToken: tokens.id_token!,
-        audience: process.env['GOOGLE_CLIENT_ID'] || 'mock-client-id'
+      if (!tokens.id_token) {
+        throw new UnauthorizedError('Google OAuth did not return an ID token');
+      }
+
+      const clientId = config.GOOGLE_CLIENT_ID || process.env['GOOGLE_CLIENT_ID'] || undefined;
+      const ticket = await client.verifyIdToken({
+        idToken: tokens.id_token,
+        audience: clientId
       });
 
       const payload = ticket.getPayload();
@@ -87,9 +109,10 @@ export class GoogleAuthService {
         name: user.name,
         role: user.role as UserRole
       };
-    } catch (error) {
-      logger.error({ error }, 'Google OAuth token exchange error');
-      throw new UnauthorizedError('Failed to authenticate with Google OAuth');
+    } catch (error: any) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.error({ error: msg }, 'Google OAuth token exchange error');
+      throw new UnauthorizedError(`Failed to authenticate with Google OAuth: ${msg}`);
     }
   }
 

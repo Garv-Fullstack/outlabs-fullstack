@@ -118,6 +118,12 @@ export interface DeliveryStats {
   failedCount: number;
   cancelledCount: number;
   rateLimitedCount: number;
+  trackedOpens?: number;
+  uniqueOpenedCount?: number;
+  openRate?: number | null;
+  totalClicks?: number;
+  uniqueClickedCount?: number;
+  clickRate?: number | null;
 }
 
 export interface SearchResultItem {
@@ -137,4 +143,19 @@ export interface SearchResponse {
   results: SearchResultItem[];
   total: number;
   source: 'elasticsearch' | 'postgres';
+}
+
+export interface TimelineDataPoint {
+  date: string;
+  sent: number;
+  opens: number;
+  replies: number;
+}
+
+export interface RecentActivityItem {
+  id: string;
+  type: string;
+  title: string;
+  timestamp: string;
+  badge: 'green' | 'purple' | 'orange' | 'red' | 'blue';
 }

@@ -1,10 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { campaignService } from '../services/campaign.service.js';
-import { emailQueueManager } from '../queues/email.queue.js';
-import { prisma } from '../repositories/prisma.js';
-import { EmailStatus, ApiResponse } from '@reachinbox/shared';
-import { NotFoundError, ConflictError, UnauthorizedError } from '../utils/errors.js';
+import { ApiResponse } from '@reachinbox/shared';
+import { UnauthorizedError } from '../utils/errors.js';
 
 const scheduleCampaignSchema = z.object({
   senderId: z.string().uuid(),
@@ -62,89 +60,11 @@ export class CampaignController {
       const page = Math.max(1, parseInt(req.query['page'] as string || '1', 10));
       const limit = Math.min(100, Math.max(1, parseInt(req.query['limit'] as string || '20', 10)));
 
-      const [campaigns, total] = await Promise.all([
-        prisma.emailCampaign.findMany({
-          where: { userId },
-          orderBy: { createdAt: 'desc' },
-          skip: (page - 1) * limit,
-          take: limit,
-          include: {
-            sender: {
-              select: { id: true, email: true, name: true }
-            },
-            deliveries: {
-              select: { status: true }
-            }
-          }
-        }),
-        prisma.emailCampaign.count({ where: { userId } })
-      ]);
-
-      const formattedCampaigns = campaigns.map((camp) => {
-        const stats = {
-          total: camp.deliveries.length,
-          scheduled: 0,
-          processing: 0,
-          sent: 0,
-          failed: 0,
-          cancelled: 0,
-          rateLimited: 0
-        };
-
-        for (const del of camp.deliveries) {
-          switch (del.status) {
-            case EmailStatus.SCHEDULED:
-              stats.scheduled++;
-              break;
-            case EmailStatus.PROCESSING:
-              stats.processing++;
-              break;
-            case EmailStatus.SENT:
-              stats.sent++;
-              break;
-            case EmailStatus.FAILED:
-              stats.failed++;
-              break;
-            case EmailStatus.CANCELLED:
-              stats.cancelled++;
-              break;
-            case EmailStatus.RATE_LIMITED_DELAYED:
-              stats.rateLimited++;
-              break;
-          }
-        }
-
-        return {
-          id: camp.id,
-          userId: camp.userId,
-          senderId: camp.senderId,
-          senderEmail: camp.sender.email,
-          senderName: camp.sender.name,
-          subject: camp.subject,
-          bodyText: camp.bodyText,
-          bodyHtml: camp.bodyHtml,
-          totalRecipients: camp.totalRecipients,
-          scheduledStartTime: camp.scheduledStartTime.toISOString(),
-          delayBetweenEmailsSeconds: camp.delayBetweenEmailsSeconds,
-          hourlyLimit: camp.hourlyLimit,
-          idempotencyKey: camp.idempotencyKey,
-          createdAt: camp.createdAt.toISOString(),
-          updatedAt: camp.updatedAt.toISOString(),
-          stats
-        };
-      });
+      const result = await campaignService.getCampaigns(userId, page, limit);
 
       const response: ApiResponse = {
         success: true,
-        data: {
-          campaigns: formattedCampaigns,
-          pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit)
-          }
-        },
+        data: result,
         requestId: req.id
       };
 
@@ -160,51 +80,11 @@ export class CampaignController {
   public async getEmailStats(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const userId = req.user!.id;
-
-      const grouped = await prisma.emailDelivery.groupBy({
-        by: ['status'],
-        where: { userId },
-        _count: { _all: true }
-      });
-
-      const counts = {
-        totalDeliveries: 0,
-        scheduledCount: 0,
-        processingCount: 0,
-        sentCount: 0,
-        failedCount: 0,
-        cancelledCount: 0,
-        rateLimitedCount: 0
-      };
-
-      for (const row of grouped) {
-        const count = row._count._all;
-        counts.totalDeliveries += count;
-        switch (row.status) {
-          case EmailStatus.SCHEDULED:
-            counts.scheduledCount += count;
-            break;
-          case EmailStatus.PROCESSING:
-            counts.processingCount += count;
-            break;
-          case EmailStatus.SENT:
-            counts.sentCount += count;
-            break;
-          case EmailStatus.FAILED:
-            counts.failedCount += count;
-            break;
-          case EmailStatus.CANCELLED:
-            counts.cancelledCount += count;
-            break;
-          case EmailStatus.RATE_LIMITED_DELAYED:
-            counts.rateLimitedCount += count;
-            break;
-        }
-      }
+      const stats = await campaignService.getEmailStats(userId);
 
       const response: ApiResponse = {
         success: true,
-        data: counts,
+        data: stats,
         requestId: req.id
       };
 
@@ -215,54 +95,19 @@ export class CampaignController {
   }
 
   /**
-   * GET /api/emails/scheduled -> Lists pending, queued, and rate-limited deliveries
+   * GET /api/emails/scheduled -> Lists upcoming scheduled deliveries
    */
   public async getScheduledDeliveries(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.user!.id;
       const page = Math.max(1, parseInt(req.query['page'] as string || '1', 10));
       const limit = Math.min(100, Math.max(1, parseInt(req.query['limit'] as string || '20', 10)));
-      const senderId = req.query['senderId'] as string | undefined;
-      const userId = req.user!.id;
 
-      const whereClause: Record<string, unknown> = {
-        userId,
-        status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED_DELAYED, EmailStatus.PROCESSING] }
-      };
-
-      if (senderId) whereClause['senderId'] = senderId;
-
-      const [deliveries, total] = await Promise.all([
-        prisma.emailDelivery.findMany({
-          where: whereClause,
-          orderBy: { scheduledFor: 'asc' },
-          skip: (page - 1) * limit,
-          take: limit,
-          include: {
-            sender: { select: { id: true, email: true, name: true } },
-            campaign: { select: { id: true, subject: true } }
-          }
-        }),
-        prisma.emailDelivery.count({ where: whereClause })
-      ]);
+      const result = await campaignService.getScheduledDeliveries(userId, page, limit);
 
       const response: ApiResponse = {
         success: true,
-        data: {
-          deliveries: deliveries.map((d) => ({
-            ...d,
-            scheduledFor: d.scheduledFor.toISOString(),
-            sentAt: d.sentAt?.toISOString() || null,
-            failedAt: d.failedAt?.toISOString() || null,
-            createdAt: d.createdAt.toISOString(),
-            updatedAt: d.updatedAt.toISOString()
-          })),
-          pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit)
-          }
-        },
+        data: result,
         requestId: req.id
       };
 
@@ -273,54 +118,19 @@ export class CampaignController {
   }
 
   /**
-   * GET /api/emails/sent -> Lists sent email deliveries with preview URLs
+   * GET /api/emails/sent -> Lists sent deliveries with tracking metadata
    */
   public async getSentDeliveries(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
+      const userId = req.user!.id;
       const page = Math.max(1, parseInt(req.query['page'] as string || '1', 10));
       const limit = Math.min(100, Math.max(1, parseInt(req.query['limit'] as string || '20', 10)));
-      const senderId = req.query['senderId'] as string | undefined;
-      const userId = req.user!.id;
 
-      const whereClause: Record<string, unknown> = {
-        userId,
-        status: EmailStatus.SENT
-      };
-
-      if (senderId) whereClause['senderId'] = senderId;
-
-      const [deliveries, total] = await Promise.all([
-        prisma.emailDelivery.findMany({
-          where: whereClause,
-          orderBy: { sentAt: 'desc' },
-          skip: (page - 1) * limit,
-          take: limit,
-          include: {
-            sender: { select: { id: true, email: true, name: true } },
-            campaign: { select: { id: true, subject: true } }
-          }
-        }),
-        prisma.emailDelivery.count({ where: whereClause })
-      ]);
+      const result = await campaignService.getSentDeliveries(userId, page, limit);
 
       const response: ApiResponse = {
         success: true,
-        data: {
-          deliveries: deliveries.map((d) => ({
-            ...d,
-            scheduledFor: d.scheduledFor.toISOString(),
-            sentAt: d.sentAt?.toISOString() || null,
-            failedAt: d.failedAt?.toISOString() || null,
-            createdAt: d.createdAt.toISOString(),
-            updatedAt: d.updatedAt.toISOString()
-          })),
-          pagination: {
-            page,
-            limit,
-            total,
-            totalPages: Math.ceil(total / limit)
-          }
-        },
+        data: result,
         requestId: req.id
       };
 
@@ -335,36 +145,57 @@ export class CampaignController {
    */
   public async cancelDelivery(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
-      const { id } = req.params;
       const userId = req.user!.id;
+      const deliveryId = req.params['id'] as string;
 
-      const delivery = await prisma.emailDelivery.findUnique({
-        where: { id }
-      });
-
-      if (!delivery || delivery.userId !== userId) {
-        throw new NotFoundError(`Delivery ${id} not found`);
-      }
-
-      if (delivery.status === EmailStatus.SENT) {
-        throw new ConflictError(`Cannot cancel delivery ${id} because it is already SENT`);
-      }
-
-      // Remove from BullMQ queue
-      await emailQueueManager.removeJob(delivery.idempotencyKey);
-
-      // Update DB status to CANCELLED
-      const updated = await prisma.emailDelivery.update({
-        where: { id },
-        data: { status: EmailStatus.CANCELLED }
-      });
+      const result = await campaignService.cancelDelivery(userId, deliveryId);
 
       const response: ApiResponse = {
         success: true,
-        data: {
-          id: updated.id,
-          status: updated.status
-        },
+        data: result,
+        requestId: req.id
+      };
+
+      res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/emails/timeline -> Time-series email metrics
+   */
+  public async getEmailTimeline(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const range = (req.query['range'] as string) || '7d';
+      const rangeKey = range === '90d' ? '90d' : range === '30d' ? '30d' : '7d';
+
+      const timeline = await campaignService.getEmailTimeline(userId, rangeKey);
+
+      const response: ApiResponse = {
+        success: true,
+        data: timeline,
+        requestId: req.id
+      };
+
+      res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/emails/activities -> Chronological activities
+   */
+  public async getRecentActivities(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const activities = await campaignService.getRecentActivities(userId);
+
+      const response: ApiResponse = {
+        success: true,
+        data: activities,
         requestId: req.id
       };
 

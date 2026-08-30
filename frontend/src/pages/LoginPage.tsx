@@ -1,11 +1,14 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.js';
 import { authApi } from '../api/auth.api.js';
 import { Send, AlertCircle } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { authenticated, loading, error } = useAuth();
+  const { authenticated, loading, error: authError } = useAuth();
+  const [searchParams] = useSearchParams();
+  const queryError = searchParams.get('error');
+  const error = authError || queryError;
 
   if (loading) {
     return (

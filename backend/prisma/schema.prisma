@@ -33,21 +33,27 @@ enum SlackStatus {
   DISCONNECTED
 }
 
+enum EngagementEventType {
+  OPENED
+  CLICKED
+}
+
 model User {
-  id                String             @id @default(uuid()) @db.Uuid
-  googleId          String             @unique @map("google_id") @db.VarChar(255)
-  email             String             @unique @db.VarChar(255)
-  name              String             @db.VarChar(255)
-  avatarUrl         String?            @map("avatar_url") @db.Text
-  role              UserRole           @default(USER)
-  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt         DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                String                 @id @default(uuid()) @db.Uuid
+  googleId          String                 @unique @map("google_id") @db.VarChar(255)
+  email             String                 @unique @db.VarChar(255)
+  name              String                 @db.VarChar(255)
+  avatarUrl         String?                @map("avatar_url") @db.Text
+  role              UserRole               @default(USER)
+  createdAt         DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   senders           SenderAccount[]
   campaigns         EmailCampaign[]
   deliveries        EmailDelivery[]
   slackIntegration  SlackIntegration?
   rateLimitEvents   RateLimitEvent[]
+  engagementEvents  EmailEngagementEvent[]
 
   @@map("users")
 }
@@ -77,58 +83,81 @@ model SenderAccount {
 }
 
 model EmailCampaign {
-  id                        String             @id @default(uuid()) @db.Uuid
-  userId                    String             @map("user_id") @db.Uuid
-  senderId                  String             @map("sender_id") @db.Uuid
-  subject                   String             @db.VarChar(500)
-  bodyText                  String             @map("body_text") @db.Text
-  bodyHtml                  String?            @map("body_html") @db.Text
-  totalRecipients           Int                @default(0) @map("total_recipients")
-  scheduledStartTime        DateTime           @map("scheduled_start_time") @db.Timestamptz
-  delayBetweenEmailsSeconds Int                @default(2) @map("delay_between_emails_seconds")
-  hourlyLimit               Int                @default(100) @map("hourly_limit")
-  idempotencyKey            String             @unique @map("idempotency_key") @db.VarChar(255)
-  createdAt                 DateTime           @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt                 DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                        String                 @id @default(uuid()) @db.Uuid
+  userId                    String                 @map("user_id") @db.Uuid
+  senderId                  String                 @map("sender_id") @db.Uuid
+  subject                   String                 @db.VarChar(500)
+  bodyText                  String                 @map("body_text") @db.Text
+  bodyHtml                  String?                @map("body_html") @db.Text
+  totalRecipients           Int                    @default(0) @map("total_recipients")
+  scheduledStartTime        DateTime               @map("scheduled_start_time") @db.Timestamptz
+  delayBetweenEmailsSeconds Int                    @default(2) @map("delay_between_emails_seconds")
+  hourlyLimit               Int                    @default(100) @map("hourly_limit")
+  idempotencyKey            String                 @unique @map("idempotency_key") @db.VarChar(255)
+  createdAt                 DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt                 DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sender                    SenderAccount      @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  user                      User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender                    SenderAccount          @relation(fields: [senderId], references: [id], onDelete: Restrict)
   deliveries                EmailDelivery[]
+  engagementEvents          EmailEngagementEvent[]
 
   @@index([userId, createdAt])
   @@map("email_campaigns")
 }
 
 model EmailDelivery {
-  id                 String          @id @default(uuid()) @db.Uuid
-  campaignId         String          @map("campaign_id") @db.Uuid
-  userId             String          @map("user_id") @db.Uuid
-  senderId           String          @map("sender_id") @db.Uuid
-  recipientEmail     String          @map("recipient_email") @db.VarChar(255)
-  recipientName      String?         @map("recipient_name") @db.VarChar(255)
-  idempotencyKey     String          @unique @map("idempotency_key") @db.VarChar(255)
-  bullmqJobId        String?         @unique @map("bullmq_job_id") @db.VarChar(255)
-  status             EmailStatus     @default(SCHEDULED)
-  scheduledFor       DateTime        @map("scheduled_for") @db.Timestamptz
-  sentAt             DateTime?       @map("sent_at") @db.Timestamptz
-  failedAt           DateTime?       @map("failed_at") @db.Timestamptz
-  errorMessage       String?         @map("error_message") @db.Text
-  retryCount         Int             @default(0) @map("retry_count")
-  etherealMessageId  String?         @map("ethereal_message_id") @db.VarChar(255)
-  etherealPreviewUrl String?         @map("ethereal_preview_url") @db.Text
-  indexedInEs        Boolean         @default(false) @map("indexed_in_es")
-  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  id                 String                 @id @default(uuid()) @db.Uuid
+  campaignId         String                 @map("campaign_id") @db.Uuid
+  userId             String                 @map("user_id") @db.Uuid
+  senderId           String                 @map("sender_id") @db.Uuid
+  recipientEmail     String                 @map("recipient_email") @db.VarChar(255)
+  recipientName      String?                @map("recipient_name") @db.VarChar(255)
+  idempotencyKey     String                 @unique @map("idempotency_key") @db.VarChar(255)
+  trackingToken      String                 @unique @default(uuid()) @map("tracking_token") @db.VarChar(255)
+  bullmqJobId        String?                @unique @map("bullmq_job_id") @db.VarChar(255)
+  status             EmailStatus            @default(SCHEDULED)
+  scheduledFor       DateTime               @map("scheduled_for") @db.Timestamptz
+  sentAt             DateTime?              @map("sent_at") @db.Timestamptz
+  failedAt           DateTime?              @map("failed_at") @db.Timestamptz
+  errorMessage       String?                @map("error_message") @db.Text
+  retryCount         Int                    @default(0) @map("retry_count")
+  etherealMessageId  String?                @map("ethereal_message_id") @db.VarChar(255)
+  etherealPreviewUrl String?                @map("ethereal_preview_url") @db.Text
+  indexedInEs        Boolean                @default(false) @map("indexed_in_es")
+  createdAt          DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
-  campaign           EmailCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  user               User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  sender             SenderAccount   @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  campaign           EmailCampaign          @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user               User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender             SenderAccount          @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  engagementEvents   EmailEngagementEvent[]
 
   @@index([status])
   @@index([userId, status])
   @@index([senderId, scheduledFor])
   @@index([campaignId])
   @@map("email_deliveries")
+}
+
+model EmailEngagementEvent {
+  id             String              @id @default(uuid()) @db.Uuid
+  deliveryId     String              @map("delivery_id") @db.Uuid
+  campaignId     String              @map("campaign_id") @db.Uuid
+  userId         String              @map("user_id") @db.Uuid
+  eventType      EngagementEventType @map("event_type")
+  trackedAt      DateTime            @default(now()) @map("tracked_at") @db.Timestamptz
+  destinationUrl String?             @map("destination_url") @db.Text
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz
+
+  delivery       EmailDelivery       @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  campaign       EmailCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+  @@index([campaignId, eventType])
+  @@index([userId, trackedAt])
+  @@map("email_engagement_events")
 }
 
 model OutboxEvent {

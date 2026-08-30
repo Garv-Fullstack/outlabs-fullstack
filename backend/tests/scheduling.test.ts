@@ -17,10 +17,10 @@ describe('Scheduling Mathematics & Job Idempotency Tests', () => {
     expect(delay).toBe(0);
   });
 
-  it('should generate deterministic BullMQ job IDs matching email:hash', () => {
+  it('should generate deterministic BullMQ job IDs matching email_hash', () => {
     const idempotencyKey = 'a6b9c8d7e6f512345678';
     const jobId = EmailDeliveryQueueManager.generateJobId(idempotencyKey);
-    expect(jobId).toBe(`email:${idempotencyKey}`);
+    expect(jobId).toBe(`email_${idempotencyKey}`);
   });
 
   it('should compute staggered schedules for sequential recipients', () => {

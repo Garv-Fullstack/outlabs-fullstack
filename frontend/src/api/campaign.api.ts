@@ -5,7 +5,9 @@ import {
   CampaignSummary,
   DeliveryItem,
   Pagination,
-  DeliveryStats
+  DeliveryStats,
+  TimelineDataPoint,
+  RecentActivityItem
 } from '../types/campaign.types.js';
 
 export const campaignApi = {
@@ -68,5 +70,19 @@ export const campaignApi = {
    */
   getStats: async (): Promise<DeliveryStats> => {
     return apiClient.get<DeliveryStats>('/emails/stats');
+  },
+
+  /**
+   * Fetches real time-series delivery data over selected range (7d, 30d, 90d)
+   */
+  getTimeline: async (range = '7d'): Promise<TimelineDataPoint[]> => {
+    return apiClient.get<TimelineDataPoint[]>(`/emails/timeline?range=${range}`);
+  },
+
+  /**
+   * Fetches real recent activity events
+   */
+  getRecentActivities: async (): Promise<RecentActivityItem[]> => {
+    return apiClient.get<RecentActivityItem[]>('/emails/activities');
   }
 };

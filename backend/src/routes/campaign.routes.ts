@@ -8,6 +8,8 @@ router.post('/emails/schedule', authenticateJwt, (req, res, next) => campaignCon
 router.get('/emails/scheduled', authenticateJwt, (req, res, next) => campaignController.getScheduledDeliveries(req, res, next));
 router.get('/emails/sent', authenticateJwt, (req, res, next) => campaignController.getSentDeliveries(req, res, next));
 router.get('/emails/stats', authenticateJwt, (req, res, next) => campaignController.getEmailStats(req, res, next));
+router.get('/emails/timeline', authenticateJwt, (req, res, next) => campaignController.getEmailTimeline(req, res, next));
+router.get('/emails/activities', authenticateJwt, (req, res, next) => campaignController.getRecentActivities(req, res, next));
 router.post('/emails/:id/cancel', authenticateJwt, (req, res, next) => campaignController.cancelDelivery(req, res, next));
 
 router.get('/campaigns', authenticateJwt, (req, res, next) => campaignController.getCampaigns(req, res, next));

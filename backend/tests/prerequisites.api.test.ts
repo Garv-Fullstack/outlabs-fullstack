@@ -240,7 +240,13 @@ describe('Milestone 4 Backend Prerequisites API Tests', () => {
         sentCount: 20,
         failedCount: 2,
         cancelledCount: 0,
-        rateLimitedCount: 3
+        rateLimitedCount: 3,
+        trackedOpens: 0,
+        uniqueOpenedCount: 0,
+        openRate: 0,
+        totalClicks: 0,
+        uniqueClickedCount: 0,
+        clickRate: 0
       });
     });
 
@@ -259,7 +265,13 @@ describe('Milestone 4 Backend Prerequisites API Tests', () => {
         sentCount: 0,
         failedCount: 0,
         cancelledCount: 0,
-        rateLimitedCount: 0
+        rateLimitedCount: 0,
+        trackedOpens: 0,
+        uniqueOpenedCount: 0,
+        openRate: null,
+        totalClicks: 0,
+        uniqueClickedCount: 0,
+        clickRate: null
       });
     });
   });

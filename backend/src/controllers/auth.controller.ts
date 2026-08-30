@@ -3,13 +3,19 @@ import crypto from 'crypto';
 import { googleAuthService, GoogleAuthService } from '../auth/google.auth.js';
 import { config } from '../config/env.js';
 import { ApiResponse } from '@reachinbox/shared';
-import { UnauthorizedError } from '../utils/errors.js';
 
 export class AuthController {
   /**
    * GET /api/auth/google -> Redirects to Google OAuth consent
    */
   public initiateGoogleLogin(_req: Request, res: Response): void {
+    if (!googleAuthService.isConfigured()) {
+      res.redirect(
+        `${config.FRONTEND_URL}/login?error=${encodeURIComponent('Google OAuth is not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env')}`
+      );
+      return;
+    }
+
     const state = crypto.randomBytes(16).toString('hex');
 
     // Store state in secure cookie for CSRF validation
@@ -27,17 +33,30 @@ export class AuthController {
   /**
    * GET /api/auth/google/callback -> Handles OAuth exchange & sets session cookie
    */
-  public async handleGoogleCallback(req: Request, res: Response, next: NextFunction): Promise<void> {
+  public async handleGoogleCallback(req: Request, res: Response, _next: NextFunction): Promise<void> {
     try {
-      const { code, state } = req.query;
+      const { code, state, error: oauthError, error_description } = req.query;
+
+      // Handle user cancellation or Google-side OAuth error
+      if (oauthError) {
+        res.clearCookie('oauth_state_google');
+        const errorMsg = String(error_description || oauthError || 'Google authentication was cancelled');
+        res.redirect(`${config.FRONTEND_URL}/login?error=${encodeURIComponent(errorMsg)}`);
+        return;
+      }
+
       const storedState = req.cookies?.['oauth_state_google'];
 
       if (!state || !storedState || state !== storedState) {
-        throw new UnauthorizedError('Invalid OAuth CSRF state parameter');
+        res.clearCookie('oauth_state_google');
+        res.redirect(`${config.FRONTEND_URL}/login?error=${encodeURIComponent('Invalid OAuth CSRF state parameter')}`);
+        return;
       }
 
       if (!code || typeof code !== 'string') {
-        throw new UnauthorizedError('Authorization code missing in Google callback');
+        res.clearCookie('oauth_state_google');
+        res.redirect(`${config.FRONTEND_URL}/login?error=${encodeURIComponent('Authorization code missing in Google callback')}`);
+        return;
       }
 
       // Clear state cookie
@@ -59,8 +78,10 @@ export class AuthController {
 
       // Redirect to frontend dashboard
       res.redirect(`${config.FRONTEND_URL}/dashboard`);
-    } catch (error) {
-      next(error);
+    } catch (error: any) {
+      res.clearCookie('oauth_state_google');
+      const detail = error instanceof Error ? error.message : String(error);
+      res.redirect(`${config.FRONTEND_URL}/login?error=${encodeURIComponent(detail)}`);
     }
   }
 

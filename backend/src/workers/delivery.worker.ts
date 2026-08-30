@@ -6,6 +6,7 @@ import { EmailJobPayload } from '../queues/queue.types.js';
 import { IDeliveryTransport, MockDeliveryTransport } from './transports/delivery.transport.js';
 import { nodemailerTransport } from './transports/smtp.transport.js';
 import { classifySmtpError, NonRetryableDeliveryError } from '../email/smtp.errors.js';
+import { instrumentEmailHtml } from '../tracking/email.instrumenter.js';
 import { slackService } from '../integrations/slack.service.js';
 import { emailIndexer } from '../search/email.indexer.js';
 import { EmailStatus, RateLimitAction } from '@reachinbox/shared';
@@ -176,6 +177,17 @@ export class DeliveryProcessor {
     }
 
     // 5. Rate limit passed: Dispatch email through transport abstraction
+    let outboundHtml = delivery.campaign.bodyHtml;
+    if (outboundHtml) {
+      if (!delivery.trackingToken) {
+        throw new NonRetryableDeliveryError(
+          `Delivery ${deliveryId} is missing required persistent tracking token`,
+          'MISSING_TRACKING_TOKEN'
+        );
+      }
+      outboundHtml = instrumentEmailHtml(outboundHtml, delivery.trackingToken) || null;
+    }
+
     try {
       const sendResult = await this.transport.send(
         {
@@ -187,7 +199,8 @@ export class DeliveryProcessor {
           recipientName: delivery.recipientName,
           subject: delivery.campaign.subject,
           bodyText: delivery.campaign.bodyText,
-          bodyHtml: delivery.campaign.bodyHtml
+          bodyHtml: outboundHtml,
+          trackingToken: delivery.trackingToken
         },
         delivery.sender as any
       );

@@ -8,6 +8,7 @@ export interface SendEmailOptions {
   subject: string;
   bodyText: string;
   bodyHtml?: string | null;
+  trackingToken?: string;
 }
 
 export interface DeliveryResult {

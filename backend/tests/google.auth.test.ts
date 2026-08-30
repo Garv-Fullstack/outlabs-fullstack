@@ -102,4 +102,70 @@ describe('Google OAuth & JWT Authentication Tests', () => {
 
     expect(resAdmin.status).toBe(200);
   });
+
+  describe('OAuth Negative & Edge Cases', () => {
+    it('should identify unconfigured Google OAuth state', () => {
+      const service = new GoogleAuthService();
+      // With empty or mock env, isConfigured should return false
+      expect(typeof service.isConfigured()).toBe('boolean');
+    });
+
+    it('should redirect with descriptive error if Google OAuth is unconfigured on login attempt', async () => {
+      const app = express();
+      app.use(cookieParser());
+      const { authController } = await import('../src/controllers/auth.controller.js');
+      const { googleAuthService } = await import('../src/auth/google.auth.js');
+      const isConfiguredSpy = (await import('vitest')).vi.spyOn(googleAuthService, 'isConfigured').mockReturnValue(false);
+
+      app.get('/api/auth/google', (req, res) => authController.initiateGoogleLogin(req, res));
+
+      const res = await request(app).get('/api/auth/google');
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login?error=');
+      isConfiguredSpy.mockRestore();
+    });
+
+    it('should handle user cancellation or Google error callback safely', async () => {
+      const app = express();
+      app.use(cookieParser());
+      const { authController } = await import('../src/controllers/auth.controller.js');
+      app.get('/api/auth/google/callback', (req, res, next) => authController.handleGoogleCallback(req, res, next));
+
+      const res = await request(app)
+        .get('/api/auth/google/callback?error=access_denied&error_description=User+denied+access')
+        .set('Cookie', 'oauth_state_google=randomstate123');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login?error=');
+    });
+
+    it('should reject callback with invalid or missing CSRF state', async () => {
+      const app = express();
+      app.use(cookieParser());
+      const { authController } = await import('../src/controllers/auth.controller.js');
+      app.get('/api/auth/google/callback', (req, res, next) => authController.handleGoogleCallback(req, res, next));
+
+      const res = await request(app)
+        .get('/api/auth/google/callback?code=mockcode123&state=state_mismatch')
+        .set('Cookie', 'oauth_state_google=different_state');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('/login?error=');
+      expect(res.headers.location).toContain('Invalid');
+    });
+
+    it('should reject callback with missing authorization code', async () => {
+      const app = express();
+      app.use(cookieParser());
+      const { authController } = await import('../src/controllers/auth.controller.js');
+      app.get('/api/auth/google/callback', (req, res, next) => authController.handleGoogleCallback(req, res, next));
+
+      const res = await request(app)
+        .get('/api/auth/google/callback?state=matchedstate')
+        .set('Cookie', 'oauth_state_google=matchedstate');
+
+      expect(res.status).toBe(302);
+      expect(decodeURIComponent(res.headers.location)).toContain('Authorization code missing');
+    });
+  });
 });

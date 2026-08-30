@@ -35,7 +35,8 @@ export class EmailDeliveryQueueManager {
    * Generates a deterministic BullMQ job ID based on delivery idempotency key
    */
   public static generateJobId(idempotencyKey: string): string {
-    return `email:${idempotencyKey}`;
+    const sanitized = idempotencyKey.replace(/:/g, '_');
+    return `email_${sanitized}`;
   }
 
   /**
