@@ -80,6 +80,10 @@ export interface CampaignSummary {
   stats: CampaignStats;
 }
 
+export interface CampaignDetail extends CampaignSummary {
+  deliveries: DeliveryItem[];
+}
+
 export interface DeliveryItem {
   id: string;
   campaignId: string;
@@ -157,5 +161,6 @@ export interface RecentActivityItem {
   type: string;
   title: string;
   timestamp: string;
-  badge: 'green' | 'purple' | 'orange' | 'red' | 'blue';
+  badge?: 'green' | 'purple' | 'orange' | 'red' | 'blue' | string;
+  badgeColor?: 'green' | 'purple' | 'orange' | 'red' | 'blue' | string;
 }

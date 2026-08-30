@@ -3,6 +3,7 @@ import {
   SenderOption,
   ScheduleCampaignPayload,
   CampaignSummary,
+  CampaignDetail,
   DeliveryItem,
   Pagination,
   DeliveryStats,
@@ -30,6 +31,13 @@ export const campaignApi = {
    */
   getCampaigns: async (page = 1, limit = 20): Promise<{ campaigns: CampaignSummary[]; pagination: Pagination }> => {
     return apiClient.get<{ campaigns: CampaignSummary[]; pagination: Pagination }>(`/campaigns?page=${page}&limit=${limit}`);
+  },
+
+  /**
+   * Fetches full single campaign details with real deliveries
+   */
+  getCampaignById: async (id: string): Promise<CampaignDetail> => {
+    return apiClient.get<CampaignDetail>(`/campaigns/${id}`);
   },
 
   /**
@@ -80,9 +88,85 @@ export const campaignApi = {
   },
 
   /**
+   * Updates an existing campaign
+   */
+  updateCampaign: async (id: string, payload: {
+    subject?: string;
+    bodyText?: string;
+    bodyHtml?: string | null;
+    hourlyLimit?: number;
+    delayBetweenEmailsSeconds?: number;
+  }): Promise<{ id: string; subject: string; bodyText: string; hourlyLimit: number; delayBetweenEmailsSeconds: number }> => {
+    return apiClient.put<{ id: string; subject: string; bodyText: string; hourlyLimit: number; delayBetweenEmailsSeconds: number }>(`/campaigns/${id}`, payload);
+  },
+
+  /**
+   * Pauses all scheduled deliveries for a campaign
+   */
+  pauseCampaign: async (id: string): Promise<{ id: string; status: string; pausedCount: number }> => {
+    return apiClient.post<{ id: string; status: string; pausedCount: number }>(`/campaigns/${id}/pause`);
+  },
+
+  /**
+   * Resumes a paused campaign
+   */
+  resumeCampaign: async (id: string): Promise<{ id: string; status: string; resumedCount: number }> => {
+    return apiClient.post<{ id: string; status: string; resumedCount: number }>(`/campaigns/${id}/resume`);
+  },
+
+  /**
+   * Cancels all pending deliveries for a campaign
+   */
+  cancelCampaign: async (id: string): Promise<{ id: string; status: string; cancelledCount: number }> => {
+    return apiClient.post<{ id: string; status: string; cancelledCount: number }>(`/campaigns/${id}/cancel`);
+  },
+
+  /**
+   * Deletes a campaign and cleans up queued jobs
+   */
+  deleteCampaign: async (id: string): Promise<{ id: string; message: string }> => {
+    return apiClient.delete<{ id: string; message: string }>(`/campaigns/${id}`);
+  },
+
+  /**
+   * Retries a failed or cancelled delivery
+   */
+  retryDelivery: async (deliveryId: string): Promise<{ id: string; status: string; scheduledFor: string }> => {
+    return apiClient.post<{ id: string; status: string; scheduledFor: string }>(`/emails/${deliveryId}/retry`);
+  },
+
+  /**
+   * Deletes an individual delivery record
+   */
+  deleteDelivery: async (deliveryId: string): Promise<{ id: string; message: string }> => {
+    return apiClient.delete<{ id: string; message: string }>(`/emails/${deliveryId}`);
+  },
+
+  /**
    * Fetches real recent activity events
    */
   getRecentActivities: async (): Promise<RecentActivityItem[]> => {
     return apiClient.get<RecentActivityItem[]>('/emails/activities');
+  },
+
+  /**
+   * Fetches live BullMQ queue metrics
+   */
+  getQueueMetrics: async (): Promise<{
+    waiting: number;
+    active: number;
+    completed: number;
+    failed: number;
+    delayed: number;
+    paused: number;
+  }> => {
+    return apiClient.get<{
+      waiting: number;
+      active: number;
+      completed: number;
+      failed: number;
+      delayed: number;
+      paused: number;
+    }>('/queues/metrics');
   }
 };

@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { AppLayout } from '../components/layout/AppLayout.js';
-import { INITIAL_INBOX, InboxThread } from '../utils/outboxData.js';
+import { InboxThread } from '../utils/outboxData.js';
+import { useAuth } from '../context/AuthContext.js';
 import {
   Search,
   Send,
-  Sparkles,
+  Mail,
   Calendar,
-  Paperclip
+  Paperclip,
+  Sparkles
 } from 'lucide-react';
 
 export const InboxPage: React.FC = () => {
-  const [threads, setThreads] = useState<InboxThread[]>(INITIAL_INBOX);
-  const [selectedThreadId, setSelectedThreadId] = useState<string>(INITIAL_INBOX[0]?.id || '');
+  const { user } = useAuth();
+  const [threads, setThreads] = useState<InboxThread[]>([]);
+  const [selectedThreadId, setSelectedThreadId] = useState<string>('');
   const [filterTag, setFilterTag] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [replyText, setReplyText] = useState<string>('');
@@ -39,7 +42,7 @@ export const InboxPage: React.FC = () => {
           messages: [
             ...t.messages,
             {
-              sender: 'Gourav Vijayvargiya',
+              sender: user?.name || 'Sender',
               timestamp: 'Just now',
               body: replyText.trim(),
               isUser: true
@@ -65,8 +68,18 @@ export const InboxPage: React.FC = () => {
           </div>
         </div>
 
-        {/* 2-PANE INBOX LAYOUT */}
-        <div className="inbox-main-layout">
+        {threads.length === 0 ? (
+          <div className="outbox-card" style={{ textAlign: 'center', padding: '80px 20px' }}>
+            <Mail size={40} color="var(--primary)" style={{ margin: '0 auto 16px auto' }} />
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: '8px' }}>
+              No conversations in inbox yet
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '420px', margin: '0 auto 16px auto', lineHeight: '1.5' }}>
+              Incoming prospect replies and response threads will appear here automatically when contacts respond to your outreach campaigns.
+            </p>
+          </div>
+        ) : (
+          <div className="inbox-main-layout">
           {/* LEFT PANE: THREADS LIST */}
           <div className="outbox-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* Search */}
@@ -278,6 +291,7 @@ export const InboxPage: React.FC = () => {
             </div>
           )}
         </div>
+        )}
       </div>
     </AppLayout>
   );

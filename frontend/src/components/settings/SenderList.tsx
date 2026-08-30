@@ -1,16 +1,62 @@
 import React, { useState } from 'react';
 import { SenderOption } from '../../types/campaign.types.js';
-import { Mail, Plus, CheckCircle2, Shield, Zap, Server } from 'lucide-react';
+import { Mail, Plus, CheckCircle2, Shield, Zap, Server, Edit3, Power, Trash2 } from 'lucide-react';
 import { AddSenderModal } from './AddSenderModal.js';
+import { EditSenderModal } from './EditSenderModal.js';
+import { ConfirmModal } from '../common/ConfirmModal.js';
+import { ContextMenu } from '../common/ContextMenu.js';
+import { senderApi } from '../../api/sender.api.js';
 
 interface SenderListProps {
   senders: SenderOption[];
   onSenderCreated: (sender: SenderOption) => void;
+  onSenderUpdated?: (sender: SenderOption) => void;
+  onSenderDeleted?: (senderId: string) => void;
   loading: boolean;
 }
 
-export const SenderList: React.FC<SenderListProps> = ({ senders, onSenderCreated, loading }) => {
+export const SenderList: React.FC<SenderListProps> = ({
+  senders,
+  onSenderCreated,
+  onSenderUpdated,
+  onSenderDeleted,
+  loading
+}) => {
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingSender, setEditingSender] = useState<SenderOption | null>(null);
+  const [deletingSender, setDeletingSender] = useState<SenderOption | null>(null);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
+
+  const handleToggleStatus = async (sender: SenderOption) => {
+    try {
+      setActionLoading(true);
+      const updated = await senderApi.toggleSenderStatus(sender.id);
+      if (onSenderUpdated) onSenderUpdated(updated);
+      setActionNotice(`Sender ${sender.email} is now ${updated.isActive ? 'Active' : 'Inactive'}`);
+      setTimeout(() => setActionNotice(null), 3000);
+    } catch (err: any) {
+      alert('Failed to toggle status: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingSender) return;
+    try {
+      setActionLoading(true);
+      const res = await senderApi.deleteSender(deletingSender.id);
+      if (onSenderDeleted) onSenderDeleted(deletingSender.id);
+      setDeletingSender(null);
+      setActionNotice(res.message || 'Sender deleted successfully');
+      setTimeout(() => setActionNotice(null), 4000);
+    } catch (err: any) {
+      alert('Failed to delete sender: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -30,6 +76,13 @@ export const SenderList: React.FC<SenderListProps> = ({ senders, onSenderCreated
           <span>Add Sender</span>
         </button>
       </div>
+
+      {actionNotice && (
+        <div className="alert-banner alert-success" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CheckCircle2 size={16} />
+          <span>{actionNotice}</span>
+        </div>
+      )}
 
       {loading && senders.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '50px 20px' }}>
@@ -93,20 +146,49 @@ export const SenderList: React.FC<SenderListProps> = ({ senders, onSenderCreated
                     </div>
                   </div>
 
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '2px 8px',
-                    borderRadius: 'var(--radius-sm)',
-                    backgroundColor: sender.isActive ? 'var(--success-bg)' : 'rgba(148, 163, 184, 0.1)',
-                    color: sender.isActive ? 'var(--success)' : 'var(--text-muted)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600
-                  }}>
-                    <CheckCircle2 size={12} />
-                    <span>{sender.isActive ? 'Active' : 'Inactive'}</span>
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: sender.isActive ? 'var(--success-bg)' : 'rgba(148, 163, 184, 0.1)',
+                      color: sender.isActive ? 'var(--success)' : 'var(--text-muted)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}>
+                      <CheckCircle2 size={12} />
+                      <span>{sender.isActive ? 'Active' : 'Inactive'}</span>
+                    </span>
+
+                    <ContextMenu
+                      ariaLabel={`Options for sender ${sender.email}`}
+                      items={[
+                        {
+                          id: 'edit',
+                          label: 'Edit Settings',
+                          icon: <Edit3 size={14} />,
+                          onClick: () => setEditingSender(sender)
+                        },
+                        {
+                          id: 'toggle',
+                          label: sender.isActive ? 'Deactivate Mailbox' : 'Activate Mailbox',
+                          icon: <Power size={14} />,
+                          variant: sender.isActive ? 'warning' : 'primary',
+                          onClick: () => handleToggleStatus(sender)
+                        },
+                        {
+                          id: 'delete',
+                          label: 'Delete Sender',
+                          icon: <Trash2 size={14} />,
+                          variant: 'danger',
+                          divider: true,
+                          onClick: () => setDeletingSender(sender)
+                        }
+                      ]}
+                    />
+                  </div>
                 </div>
 
                 <div style={{
@@ -154,6 +236,27 @@ export const SenderList: React.FC<SenderListProps> = ({ senders, onSenderCreated
         onClose={() => setModalOpen(false)}
         onSenderCreated={onSenderCreated}
       />
+
+      <EditSenderModal
+        isOpen={!!editingSender}
+        sender={editingSender}
+        onClose={() => setEditingSender(null)}
+        onSaved={(updated) => {
+          if (onSenderUpdated) onSenderUpdated(updated);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletingSender}
+        title="Delete Sender Mailbox?"
+        message={`Are you sure you want to delete sender mailbox "${deletingSender?.email}"? This operation cannot be undone. Any active scheduled deliveries must be cancelled first.`}
+        confirmText="Delete Sender"
+        variant="danger"
+        loading={actionLoading}
+        onClose={() => setDeletingSender(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 };
+

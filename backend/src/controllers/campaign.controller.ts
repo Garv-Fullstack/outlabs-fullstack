@@ -75,6 +75,28 @@ export class CampaignController {
   }
 
   /**
+   * GET /api/campaigns/:id -> Retrieves full single campaign details with real deliveries
+   */
+  public async getCampaignById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const campaignId = req.params['id'] as string;
+
+      const result = await campaignService.getCampaignById(userId, campaignId);
+
+      const response: ApiResponse = {
+        success: true,
+        data: result,
+        requestId: req.id
+      };
+
+      res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/emails/stats -> Aggregates high-level delivery statistics for the user
    */
   public async getEmailStats(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -200,6 +222,139 @@ export class CampaignController {
       };
 
       res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/campaigns/:id -> Update campaign
+   */
+  public async updateCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const campaignId = req.params.id;
+      const result = await campaignService.updateCampaign(userId, campaignId, req.body);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/campaigns/:id/pause -> Pause campaign
+   */
+  public async pauseCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const campaignId = req.params.id;
+      const result = await campaignService.pauseCampaign(userId, campaignId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/campaigns/:id/resume -> Resume campaign
+   */
+  public async resumeCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const campaignId = req.params.id;
+      const result = await campaignService.resumeCampaign(userId, campaignId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/campaigns/:id/cancel -> Cancel campaign
+   */
+  public async cancelCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const campaignId = req.params.id;
+      const result = await campaignService.cancelCampaign(userId, campaignId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/campaigns/:id -> Delete campaign
+   */
+  public async deleteCampaign(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const campaignId = req.params.id;
+      const result = await campaignService.deleteCampaign(userId, campaignId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/emails/:id/retry -> Retry failed delivery
+   */
+  public async retryDelivery(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const deliveryId = req.params.id;
+      const result = await campaignService.retryDelivery(userId, deliveryId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/emails/:id -> Delete delivery record
+   */
+  public async deleteDelivery(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const userId = req.user!.id;
+      const deliveryId = req.params.id;
+      const result = await campaignService.deleteDelivery(userId, deliveryId);
+
+      res.status(200).json({
+        success: true,
+        data: result,
+        requestId: req.id
+      });
     } catch (error) {
       next(error);
     }

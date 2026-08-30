@@ -3,12 +3,15 @@ import { config, getRedactedConfig } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { disconnectPrisma } from './repositories/prisma.js';
 import { disconnectRedis } from './repositories/redis.js';
+import { workerLifecycle } from './workers/worker.lifecycle.js';
+import { outboxService } from './services/outbox.service.js';
 import http from 'http';
 
 const app = createApp();
 const server = http.createServer(app);
 
 let isShuttingDown = false;
+let outboxInterval: NodeJS.Timeout | null = null;
 
 async function gracefulShutdown(signal: string): Promise<void> {
   if (isShuttingDown) {
@@ -18,6 +21,18 @@ async function gracefulShutdown(signal: string): Promise<void> {
   isShuttingDown = true;
 
   logger.info({ signal }, 'Received shutdown signal, terminating server gracefully...');
+
+  if (outboxInterval) {
+    clearInterval(outboxInterval);
+    outboxInterval = null;
+  }
+
+  // Stop BullMQ Worker
+  try {
+    await workerLifecycle.stopWorker();
+  } catch (workerErr) {
+    logger.error({ workerErr }, 'Error while stopping worker');
+  }
 
   // Stop accepting new connections
   server.close(async (err) => {
@@ -69,4 +84,24 @@ server.listen(config.PORT, () => {
     },
     'ReachInbox Backend Server initialized successfully'
   );
+
+  // Start BullMQ Worker in development/production
+  if (config.NODE_ENV !== 'test') {
+    try {
+      workerLifecycle.startWorker();
+      logger.info('BullMQ Delivery Worker started automatically with server');
+    } catch (workerInitErr) {
+      logger.error({ err: (workerInitErr as Error).message }, 'Failed to start BullMQ worker');
+    }
+
+    // Periodic Outbox Dispatcher (every 3 seconds)
+    outboxInterval = setInterval(async () => {
+      try {
+        await outboxService.dispatchOutboxBatch();
+      } catch (outboxErr) {
+        // Silent outbox retry logging
+      }
+    }, 3000);
+  }
 });
+

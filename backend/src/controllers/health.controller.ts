@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { healthService } from '../services/health.service.js';
+import { emailQueueManager } from '../queues/email.queue.js';
 import { ApiResponse, HealthCheckResponse } from '@reachinbox/shared';
 
 export class HealthController {
@@ -20,6 +21,21 @@ export class HealthController {
       next(error);
     }
   }
+
+  public async getQueueMetrics(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const metrics = await emailQueueManager.getQueueMetrics();
+      const response: ApiResponse = {
+        success: true,
+        data: metrics,
+        requestId: req.id
+      };
+      res.status(200).json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 export const healthController = new HealthController();
+

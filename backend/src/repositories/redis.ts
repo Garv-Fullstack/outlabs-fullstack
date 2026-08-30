@@ -51,10 +51,18 @@ export async function checkRedisHealth(): Promise<{ status: 'up' | 'down'; laten
   const start = Date.now();
   try {
     const client = getRedisClient();
-    if (client.status !== 'ready' && client.status !== 'connecting' && client.status !== 'connect') {
-      await client.connect();
-    }
-    const pong = await client.ping();
+    const probePromise = (async () => {
+      if (client.status !== 'ready' && client.status !== 'connecting' && client.status !== 'connect') {
+        await client.connect();
+      }
+      return client.ping();
+    })();
+
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Redis health check timed out')), 1500)
+    );
+
+    const pong = await Promise.race([probePromise, timeoutPromise]);
     if (pong === 'PONG') {
       return {
         status: 'up',

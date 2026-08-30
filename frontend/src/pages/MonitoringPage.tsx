@@ -15,6 +15,16 @@ export const MonitoringPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // BullMQ Live Metrics State
+  const [queueMetrics, setQueueMetrics] = useState<{
+    waiting: number;
+    active: number;
+    completed: number;
+    failed: number;
+    delayed: number;
+    paused: number;
+  } | null>(null);
+
   // Cancellation State
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
@@ -24,6 +34,15 @@ export const MonitoringPage: React.FC = () => {
   const [searchSource, setSearchSource] = useState<'elasticsearch' | 'postgres' | null>(null);
   const [searchTotal, setSearchTotal] = useState<number>(0);
   const [isSearching, setIsSearching] = useState<boolean>(false);
+
+  const fetchMetrics = useCallback(async () => {
+    try {
+      const metrics = await campaignApi.getQueueMetrics();
+      setQueueMetrics(metrics);
+    } catch {
+      // silent fallback
+    }
+  }, []);
 
   const fetchDeliveries = useCallback(async (tab: 'SCHEDULED' | 'SENT', page = 1) => {
     try {
@@ -46,10 +65,11 @@ export const MonitoringPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    fetchMetrics();
     if (activeTab === 'SCHEDULED' || activeTab === 'SENT') {
       fetchDeliveries(activeTab, 1);
     }
-  }, [activeTab, fetchDeliveries]);
+  }, [activeTab, fetchDeliveries, fetchMetrics]);
 
   // Debounced search effect
   useEffect(() => {
@@ -111,6 +131,7 @@ export const MonitoringPage: React.FC = () => {
 
           <button
             onClick={() => {
+              fetchMetrics();
               if (activeTab === 'SCHEDULED' || activeTab === 'SENT') {
                 fetchDeliveries(activeTab, pagination.page);
               }
@@ -121,6 +142,41 @@ export const MonitoringPage: React.FC = () => {
             <RefreshCw size={16} className={loading ? 'spin' : ''} />
             <span>Refresh Queue</span>
           </button>
+        </div>
+
+        {/* Live BullMQ Queue Health Stat Cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
+          <div className="card" style={{ padding: '16px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Delayed (Scheduled)</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--primary)', marginTop: '4px' }}>
+              {queueMetrics ? queueMetrics.delayed : '—'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Future BullMQ jobs</div>
+          </div>
+
+          <div className="card" style={{ padding: '16px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Waiting & Active</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#06b6d4', marginTop: '4px' }}>
+              {queueMetrics ? queueMetrics.waiting + queueMetrics.active : '—'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Processing ready</div>
+          </div>
+
+          <div className="card" style={{ padding: '16px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Completed</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#10b981', marginTop: '4px' }}>
+              {queueMetrics ? queueMetrics.completed : '—'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Successfully sent</div>
+          </div>
+
+          <div className="card" style={{ padding: '16px' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Failed</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ef4444', marginTop: '4px' }}>
+              {queueMetrics ? queueMetrics.failed : '—'}
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>Errored / Retries</div>
+          </div>
         </div>
 
         {error && (

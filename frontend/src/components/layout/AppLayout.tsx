@@ -2,6 +2,7 @@ import React, { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext.js';
 import { useTheme } from '../../context/ThemeContext.js';
+import { campaignApi } from '../../api/campaign.api.js';
 import {
   LayoutDashboard,
   Send,
@@ -88,41 +89,71 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const notifications = [
-    {
-      id: '1',
-      title: 'Campaign Delivered',
-      desc: 'Product Launch Outreach sent to 1,250 contacts',
-      time: '2 mins ago',
-      unread: true
-    },
-    {
-      id: '2',
-      title: 'New High-Value Reply',
-      desc: 'John Smith (TechCorp) is interested in meeting',
-      time: '15 mins ago',
-      unread: true
-    },
-    {
-      id: '3',
-      title: 'Daily Limit Health',
-      desc: '72% of daily allocation used smoothly',
-      time: '1 hour ago',
-      unread: true
+  const [activities, setActivities] = useState<any[]>([]);
+  const [lastReadTime, setLastReadTime] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('reachinbox_notifications_last_read');
+      return stored ? new Date(stored).getTime() : 0;
+    } catch {
+      return 0;
     }
+  });
+
+  const formatTimeAgo = (dateStr: string) => {
+    const time = new Date(dateStr).getTime();
+    if (isNaN(time)) return dateStr;
+    const diffSec = Math.max(0, Math.floor((Date.now() - time) / 1000));
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} mins ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchRecent = async () => {
+      try {
+        const data = await campaignApi.getRecentActivities();
+        if (isMounted) {
+          setActivities(data || []);
+        }
+      } catch {
+        // silent fallback
+      }
+    };
+    fetchRecent();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const unreadCount = activities.filter(
+    (a) => new Date(a.timestamp).getTime() > lastReadTime
+  ).length;
+
+  const handleMarkAllAsRead = () => {
+    const now = Date.now();
+    try {
+      localStorage.setItem('reachinbox_notifications_last_read', new Date(now).toISOString());
+    } catch {
+      // ignore
+    }
+    setLastReadTime(now);
+  };
+
+  const navSearchItems = [
+    { title: 'Outreach Campaigns', type: 'View', path: '/campaigns' },
+    { title: 'Schedule New Campaign', type: 'Action', path: '/composer' },
+    { title: 'Prospect Contacts', type: 'View', path: '/contacts' },
+    { title: 'Performance Analytics', type: 'View', path: '/analytics' },
+    { title: 'Queue & Rate Limiting Monitoring', type: 'System', path: '/monitoring' },
+    { title: 'Unified Inbox', type: 'View', path: '/inbox' },
+    { title: 'Email Templates', type: 'View', path: '/templates' },
+    { title: 'Workspace Settings & SMTP Senders', type: 'Settings', path: '/settings' },
+    { title: 'Integrations & Slack OAuth', type: 'Integration', path: '/integrations' }
   ];
 
-  const quickSearchItems = [
-    { title: 'Product Launch Outreach', type: 'Campaign', path: '/campaigns' },
-    { title: 'Enterprise Solutions Campaign', type: 'Campaign', path: '/campaigns' },
-    { title: 'John Smith (TechCorp)', type: 'Contact', path: '/contacts' },
-    { title: 'Sarah Johnson (Innovate Labs)', type: 'Contact', path: '/contacts' },
-    { title: 'SaaS Value Proposition', type: 'Template', path: '/templates' },
-    { title: 'Delivery & Rate Limiting', type: 'Monitoring', path: '/monitoring' },
-    { title: 'Slack & Gmail Integrations', type: 'Integration', path: '/integrations' }
-  ];
-
-  const filteredSearch = quickSearchItems.filter((i) =>
+  const filteredSearch = navSearchItems.filter((i) =>
     i.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     i.type.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -412,37 +443,83 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
                 aria-label="Notifications"
               >
                 <Bell size={18} />
-                <span className="bell-badge" aria-label="3 unread notifications" />
+                {unreadCount > 0 && <span className="bell-badge" aria-label={`${unreadCount} unread notifications`} />}
               </button>
 
               {/* Notifications Dropdown */}
               {notificationsOpen && (
                 <div className="notifications-dropdown">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-main)' }}>Notifications</span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--primary)', fontWeight: 600, cursor: 'pointer' }}>Mark all read</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {notifications.map((n) => (
-                      <div
-                        key={n.id}
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllAsRead}
                         style={{
-                          padding: '8px 10px',
-                          borderRadius: '8px',
-                          backgroundColor: 'var(--bg-card-secondary)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '2px'
+                          background: 'none',
+                          border: 'none',
+                          color: 'var(--primary)',
+                          fontSize: '0.75rem',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          padding: 0
                         }}
                       >
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)' }}>{n.title}</span>
-                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>{n.time}</span>
-                        </div>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{n.desc}</span>
-                      </div>
-                    ))}
+                        Mark all as read
+                      </button>
+                    )}
                   </div>
+                  {activities.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      No new notifications
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {activities.slice(0, 5).map((n) => (
+                        <div
+                          key={n.id}
+                          onClick={() => {
+                            setNotificationsOpen(false);
+                            if (n.campaignId) {
+                              navigate(`/campaigns/${n.campaignId}`);
+                            } else {
+                              navigate('/monitoring');
+                            }
+                          }}
+                          style={{
+                            padding: '8px 10px',
+                            borderRadius: '8px',
+                            backgroundColor: 'var(--bg-card-secondary)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '2px',
+                            cursor: 'pointer',
+                            transition: 'background-color 0.15s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--bg-card-secondary)';
+                          }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+                            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-main)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {n.title || n.subject || 'Activity'}
+                            </span>
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', flexShrink: 0 }}>
+                              {formatTimeAgo(n.timestamp)}
+                            </span>
+                          </div>
+                          {n.description && (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {n.description}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -454,10 +531,10 @@ export const AppLayout: React.FC<{ children: ReactNode }> = ({ children }) => {
                 onClick={() => setUserMenuOpen((prev) => !prev)}
               >
                 <div className="navbar-avatar">
-                  {user?.name ? user.name.charAt(0).toUpperCase() : 'G'}
+                  {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
                 </div>
                 <div className="navbar-user-meta">
-                  <span className="navbar-username">{user?.name || 'Gourav Vijayvargiya'}</span>
+                  <span className="navbar-username">{user?.name || 'Workspace User'}</span>
                   <span className="navbar-role">{user?.role || 'Administrator'}</span>
                 </div>
                 <ChevronDown size={14} style={{ color: 'var(--text-muted)', marginLeft: '4px' }} className="user-chevron" />

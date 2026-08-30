@@ -112,6 +112,10 @@ export const ComposerPage: React.FC = () => {
       setErrorMessage('Please select a sender account');
       return;
     }
+    if (!selectedSenderId) {
+      setErrorMessage('Please select a sender mailbox. Add a sender in Settings if none are configured.');
+      return;
+    }
     if (!subject.trim()) {
       setErrorMessage('Please enter an email subject line');
       return;
@@ -136,7 +140,7 @@ export const ComposerPage: React.FC = () => {
       const idempotencyKey = crypto.randomUUID();
 
       const result = await campaignApi.scheduleCampaign({
-        senderId: selectedSenderId || 'mock-sender-1',
+        senderId: selectedSenderId,
         subject: subject.trim(),
         bodyText: bodyText.trim(),
         bodyHtml: null,
@@ -390,7 +394,7 @@ export const ComposerPage: React.FC = () => {
                           </option>
                         ))
                       ) : (
-                        <option value="mock-sender-1">Gourav Vijayvargiya (gourav@outbox.com) — Limit: 100/hr</option>
+                        <option value="">No sender accounts found — Add a sender in Settings</option>
                       )}
                     </select>
                   </div>

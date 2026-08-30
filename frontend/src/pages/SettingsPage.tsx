@@ -34,10 +34,10 @@ export const SettingsPage: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
 
   // General Form State
-  const [fullName, setFullName] = useState<string>(user?.name || 'Gourav Vijayvargiya');
-  const [email, setEmail] = useState<string>(user?.email || 'gourav@outbox.com');
-  const [companyName, setCompanyName] = useState<string>('Outbox');
-  const [timeZone, setTimeZone] = useState<string>('(GMT+05:30) Asia/Kolkata');
+  const [fullName, setFullName] = useState<string>(user?.name || '');
+  const [email, setEmail] = useState<string>(user?.email || '');
+  const [companyName, setCompanyName] = useState<string>('My Workspace');
+  const [timeZone, setTimeZone] = useState<string>('(GMT+00:00) UTC');
   const [language, setLanguage] = useState<string>('English');
 
   const fetchSenders = async () => {
@@ -340,6 +340,12 @@ export const SettingsPage: React.FC = () => {
               <SenderList
                 senders={senders}
                 onSenderCreated={handleSenderCreated}
+                onSenderUpdated={(updated) => {
+                  setSenders((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+                }}
+                onSenderDeleted={(senderId) => {
+                  setSenders((prev) => prev.filter((s) => s.id !== senderId));
+                }}
                 loading={loadingSenders}
               />
             )}
@@ -421,15 +427,9 @@ export const SettingsPage: React.FC = () => {
                   </thead>
                   <tbody>
                     <tr>
-                      <td style={{ fontWeight: 700 }}>Gourav Vijayvargiya</td>
-                      <td>gourav@outbox.com</td>
-                      <td><span className="badge badge-completed">Owner / Admin</span></td>
-                      <td><span className="badge badge-active">Active</span></td>
-                    </tr>
-                    <tr>
-                      <td style={{ fontWeight: 700 }}>Sarah Jenkins</td>
-                      <td>sarah@outbox.com</td>
-                      <td><span className="badge badge-tag-followup">Campaign Manager</span></td>
+                      <td style={{ fontWeight: 700 }}>{user?.name || 'Workspace Administrator'}</td>
+                      <td>{user?.email || 'admin@outbox.com'}</td>
+                      <td><span className="badge badge-completed">{user?.role || 'Owner / Admin'}</span></td>
                       <td><span className="badge badge-active">Active</span></td>
                     </tr>
                   </tbody>

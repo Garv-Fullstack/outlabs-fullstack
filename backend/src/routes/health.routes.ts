@@ -6,3 +6,4 @@ const router = Router();
 router.get('/health', (req, res, next) => healthController.checkHealth(req, res, next));
 
 export default router;
+

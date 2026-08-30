@@ -12,10 +12,12 @@ import {
   BarChart2,
   Check,
   Send,
-  MoreVertical
+  Eye,
+  Settings
 } from 'lucide-react';
 import { AppLayout } from '../components/layout/AppLayout.js';
 import { PerformanceChart } from '../components/common/PerformanceChart.js';
+import { ContextMenu } from '../components/common/ContextMenu.js';
 import { campaignApi } from '../api/campaign.api.js';
 import { useAuth } from '../context/AuthContext.js';
 import { CampaignSummary, DeliveryStats, RecentActivityItem } from '../types/campaign.types.js';
@@ -34,14 +36,8 @@ export const DashboardPage: React.FC = () => {
   const [stats, setStats] = useState<DeliveryStats | null>(null);
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [activities, setActivities] = useState<RecentActivityItem[]>([]);
-
-  // Local task list
-  const [tasks, setTasks] = useState<TaskItem[]>([
-    { id: 1, title: 'Follow up with TechCorp', sub: '5 pending follow-ups', done: false },
-    { id: 2, title: 'Review campaign performance', sub: 'Daily review', done: false },
-    { id: 3, title: 'Add new prospects', sub: '20 contacts to add', done: false },
-    { id: 4, title: 'Check email deliverability', sub: 'System health check', done: false }
-  ]);
+  // State for user-checked task IDs
+  const [completedTaskIds, setCompletedTaskIds] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -76,12 +72,13 @@ export const DashboardPage: React.FC = () => {
   }, []);
 
   const toggleTask = (id: number) => {
-    setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    );
+    setCompletedTaskIds((prev) => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
   };
 
-  const userDisplayName = user?.name || 'Gourav';
+  const userDisplayName = user?.name || 'there';
 
   // Format relative timestamp helper
   const formatTimeAgo = (dateStr: string) => {
@@ -93,6 +90,71 @@ export const DashboardPage: React.FC = () => {
     if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hours ago`;
     return `${Math.floor(diffSec / 86400)} days ago`;
   };
+
+  // Real data-driven operational tasks
+  const dynamicTasks: TaskItem[] = [];
+
+  if (!stats || stats.totalDeliveries === 0) {
+    dynamicTasks.push({
+      id: 1,
+      title: 'Configure SMTP Sender Account',
+      sub: 'Set up an authenticated sending mailbox in Settings',
+      done: !!completedTaskIds[1]
+    });
+    dynamicTasks.push({
+      id: 2,
+      title: 'Schedule First Outreach Campaign',
+      sub: 'Upload CSV recipients and configure sequences',
+      done: !!completedTaskIds[2]
+    });
+    dynamicTasks.push({
+      id: 3,
+      title: 'Verify Slack Notifications',
+      sub: 'Connect workspace channel in Integrations',
+      done: !!completedTaskIds[3]
+    });
+  } else {
+    if (stats.scheduledCount > 0) {
+      dynamicTasks.push({
+        id: 10,
+        title: 'Monitor Scheduled Dispatch Queue',
+        sub: `${stats.scheduledCount} emails in queue awaiting dispatch`,
+        done: !!completedTaskIds[10]
+      });
+    }
+    if (stats.rateLimitedCount > 0) {
+      dynamicTasks.push({
+        id: 11,
+        title: 'Review Rate-Limited Throttles',
+        sub: `${stats.rateLimitedCount} deliveries delayed by leaky-bucket rate limiter`,
+        done: !!completedTaskIds[11]
+      });
+    }
+    if (stats.failedCount > 0) {
+      dynamicTasks.push({
+        id: 12,
+        title: 'Inspect Failed Deliveries',
+        sub: `${stats.failedCount} bounced or failed attempts`,
+        done: !!completedTaskIds[12]
+      });
+    }
+    if (campaigns.length > 0) {
+      const topCamp = campaigns[0]!;
+      const pct = topCamp.totalRecipients > 0 ? Math.round((topCamp.stats.sent / topCamp.totalRecipients) * 100) : 0;
+      dynamicTasks.push({
+        id: 13,
+        title: `Track Campaign: "${topCamp.subject}"`,
+        sub: `${topCamp.stats.sent} / ${topCamp.totalRecipients} sent (${pct}%)`,
+        done: topCamp.stats.sent >= topCamp.totalRecipients || !!completedTaskIds[13]
+      });
+    }
+    dynamicTasks.push({
+      id: 14,
+      title: 'Check Deliverability & Open Analytics',
+      sub: `${stats.sentCount} delivered • ${stats.openRate !== null && stats.openRate !== undefined ? `${stats.openRate.toFixed(1)}% open rate` : 'Engagement tracking active'}`,
+      done: !!completedTaskIds[14]
+    });
+  }
 
   return (
     <AppLayout>
@@ -256,13 +318,29 @@ export const DashboardPage: React.FC = () => {
                               </span>
                             </td>
                             <td>
-                              <button
-                                style={{ color: 'var(--text-muted)', padding: '4px', cursor: 'pointer' }}
-                                onClick={() => navigate('/campaigns')}
-                                title="Campaign Details"
-                              >
-                                <MoreVertical size={16} />
-                              </button>
+                              <ContextMenu
+                                ariaLabel={`Options for ${camp.subject}`}
+                                items={[
+                                  {
+                                    id: 'view',
+                                    label: 'View Deliveries',
+                                    icon: <Eye size={14} />,
+                                    onClick: () => navigate(`/campaigns/${camp.id}`)
+                                  },
+                                  {
+                                    id: 'new-campaign',
+                                    label: 'Create Similar Campaign',
+                                    icon: <Plus size={14} />,
+                                    onClick: () => navigate('/composer')
+                                  },
+                                  {
+                                    id: 'settings',
+                                    label: 'Manage Senders',
+                                    icon: <Settings size={14} />,
+                                    onClick: () => navigate('/settings')
+                                  }
+                                ]}
+                              />
                             </td>
                           </tr>
                         );
@@ -369,12 +447,12 @@ export const DashboardPage: React.FC = () => {
               <div className="card-header-row">
                 <h3 className="card-title">Today's Tasks</h3>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  {tasks.filter(t => t.done).length}/{tasks.length} done
+                  {dynamicTasks.filter(t => t.done).length}/{dynamicTasks.length} done
                 </span>
               </div>
 
               <div className="tasks-list">
-                {tasks.map((task) => (
+                {dynamicTasks.map((task) => (
                   <div
                     key={task.id}
                     className="task-item"
@@ -418,7 +496,7 @@ export const DashboardPage: React.FC = () => {
                 <div className="activity-feed">
                   {activities.map((act) => (
                     <div key={act.id} className="activity-item">
-                      <div className={`activity-icon-badge ${act.badge || 'green'}`}>
+                      <div className={`activity-icon-badge ${act.badgeColor || act.badge || 'green'}`}>
                         {act.type === 'delivery' && <Send size={15} />}
                         {act.type === 'campaign' && <Mail size={15} />}
                         {act.type === 'ratelimit' && <RotateCcw size={15} />}

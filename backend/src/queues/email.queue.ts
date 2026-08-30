@@ -131,6 +131,29 @@ export class EmailDeliveryQueueManager {
   }
 
   /**
+   * Retrieves live job counts from BullMQ Redis
+   */
+  public async getQueueMetrics(): Promise<{
+    waiting: number;
+    active: number;
+    completed: number;
+    failed: number;
+    delayed: number;
+    paused: number;
+  }> {
+    const queue = this.getQueue();
+    const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed', 'paused');
+    return {
+      waiting: counts['waiting'] || 0,
+      active: counts['active'] || 0,
+      completed: counts['completed'] || 0,
+      failed: counts['failed'] || 0,
+      delayed: counts['delayed'] || 0,
+      paused: counts['paused'] || 0
+    };
+  }
+
+  /**
    * Closes the queue connection gracefully
    */
   public async close(): Promise<void> {

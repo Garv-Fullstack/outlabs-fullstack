@@ -141,7 +141,7 @@ export class CampaignService {
     const totalRecipients = recipientList.length;
     const startMs = startTime.getTime();
 
-    const effectiveIdempotencyKey = idempotencyKey || `camp_${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const effectiveIdempotencyKey = idempotencyKey || `camp_${userId}_${Date.now()}_${crypto.randomUUID().replace(/-/g, '').substring(0, 12)}`;
 
     // Execute atomic PostgreSQL transaction
     const result = await prisma.$transaction(async (tx) => {
@@ -324,6 +324,107 @@ export class CampaignService {
         total,
         totalPages: Math.ceil(total / limit)
       }
+    };
+  }
+
+  /**
+   * Retrieves full details for a single campaign belonging to the authenticated user
+   */
+  public async getCampaignById(userId: string, campaignId: string) {
+    const campaign = await prisma.emailCampaign.findFirst({
+      where: { id: campaignId, userId },
+      include: {
+        sender: {
+          select: { id: true, email: true, name: true, hourlyLimit: true }
+        },
+        deliveries: {
+          orderBy: { scheduledFor: 'asc' },
+          select: {
+            id: true,
+            recipientEmail: true,
+            recipientName: true,
+            status: true,
+            scheduledFor: true,
+            sentAt: true,
+            failedAt: true,
+            errorMessage: true,
+            retryCount: true,
+            etherealPreviewUrl: true,
+            etherealMessageId: true,
+            createdAt: true
+          }
+        }
+      }
+    });
+
+    if (!campaign) {
+      throw new NotFoundError(`Campaign ${campaignId} not found or unauthorized`);
+    }
+
+    const stats = {
+      total: campaign.deliveries.length,
+      scheduled: 0,
+      processing: 0,
+      sent: 0,
+      failed: 0,
+      cancelled: 0,
+      rateLimited: 0
+    };
+
+    for (const del of campaign.deliveries) {
+      switch (del.status) {
+        case EmailStatus.SCHEDULED:
+          stats.scheduled++;
+          break;
+        case EmailStatus.PROCESSING:
+          stats.processing++;
+          break;
+        case EmailStatus.SENT:
+          stats.sent++;
+          break;
+        case EmailStatus.FAILED:
+          stats.failed++;
+          break;
+        case EmailStatus.CANCELLED:
+          stats.cancelled++;
+          break;
+        case EmailStatus.RATE_LIMITED_DELAYED:
+          stats.rateLimited++;
+          break;
+      }
+    }
+
+    return {
+      id: campaign.id,
+      userId: campaign.userId,
+      senderId: campaign.senderId,
+      senderEmail: campaign.sender.email,
+      senderName: campaign.sender.name,
+      subject: campaign.subject,
+      bodyText: campaign.bodyText,
+      bodyHtml: campaign.bodyHtml,
+      totalRecipients: campaign.totalRecipients,
+      scheduledStartTime: campaign.scheduledStartTime.toISOString(),
+      delayBetweenEmailsSeconds: campaign.delayBetweenEmailsSeconds,
+      hourlyLimit: campaign.hourlyLimit,
+      idempotencyKey: campaign.idempotencyKey,
+      createdAt: campaign.createdAt.toISOString(),
+      updatedAt: campaign.updatedAt.toISOString(),
+      stats,
+      deliveries: campaign.deliveries.map((d) => ({
+        id: d.id,
+        recipientEmail: d.recipientEmail,
+        recipientName: d.recipientName,
+        status: d.status,
+        scheduledFor: d.scheduledFor.toISOString(),
+        sentAt: d.sentAt ? d.sentAt.toISOString() : null,
+        failedAt: d.failedAt ? d.failedAt.toISOString() : null,
+        errorMessage: d.errorMessage,
+        retryCount: d.retryCount,
+        etherealPreviewUrl: d.etherealPreviewUrl,
+        etherealMessageId: d.etherealMessageId,
+        createdAt: d.createdAt.toISOString()
+      }))
     };
   }
 
@@ -702,10 +803,333 @@ export class CampaignService {
       }
     });
 
+    try {
+      await emailQueueManager.removeJob(delivery.idempotencyKey);
+    } catch (queueErr) {
+      logger.warn({ deliveryId, queueErr }, 'Could not remove BullMQ job upon delivery cancel');
+    }
+
     return {
       id: updated.id,
       status: updated.status,
       cancelledAt: updated.updatedAt.toISOString()
+    };
+  }
+
+  /**
+   * Retries a failed or cancelled delivery
+   */
+  public async retryDelivery(userId: string, deliveryId: string) {
+    const delivery = await prisma.emailDelivery.findFirst({
+      where: { id: deliveryId, userId },
+      include: { campaign: true, sender: true }
+    });
+
+    if (!delivery) {
+      throw new NotFoundError(`Delivery ${deliveryId} not found or unauthorized`);
+    }
+
+    if (delivery.status !== EmailStatus.FAILED && delivery.status !== EmailStatus.CANCELLED) {
+      throw new ConflictError(`Only FAILED or CANCELLED deliveries can be retried. Current status: '${delivery.status}'`);
+    }
+
+    // Reset status to SCHEDULED with new target dispatch time
+    const scheduledFor = new Date();
+    const updated = await prisma.emailDelivery.update({
+      where: { id: deliveryId },
+      data: {
+        status: EmailStatus.SCHEDULED,
+        errorMessage: null,
+        failedAt: null,
+        scheduledFor,
+        retryCount: delivery.retryCount + 1
+      }
+    });
+
+    // Enqueue job in BullMQ
+    try {
+      await emailQueueManager.enqueueEmail({
+        deliveryId: delivery.id,
+        campaignId: delivery.campaignId,
+        userId: delivery.userId,
+        senderId: delivery.senderId,
+        recipientEmail: delivery.recipientEmail,
+        recipientName: delivery.recipientName || undefined,
+        subject: delivery.campaign.subject,
+        bodyText: delivery.campaign.bodyText,
+        bodyHtml: delivery.campaign.bodyHtml || undefined,
+        trackingToken: delivery.trackingToken,
+        scheduledFor: scheduledFor.toISOString(),
+        idempotencyKey: delivery.idempotencyKey
+      }, 0);
+    } catch (queueErr: any) {
+      logger.error({ deliveryId, queueErr: queueErr.message }, 'Failed to enqueue retry job in BullMQ');
+    }
+
+    return {
+      id: updated.id,
+      status: updated.status,
+      scheduledFor: updated.scheduledFor.toISOString()
+    };
+  }
+
+  /**
+   * Deletes a delivery record
+   */
+  public async deleteDelivery(userId: string, deliveryId: string) {
+    const delivery = await prisma.emailDelivery.findFirst({
+      where: { id: deliveryId, userId }
+    });
+
+    if (!delivery) {
+      throw new NotFoundError(`Delivery ${deliveryId} not found or unauthorized`);
+    }
+
+    if (delivery.status === EmailStatus.SCHEDULED || delivery.status === EmailStatus.RATE_LIMITED_DELAYED) {
+      try {
+        await emailQueueManager.removeJob(delivery.idempotencyKey);
+      } catch (queueErr) {
+        logger.warn({ deliveryId, queueErr }, 'Could not remove BullMQ job upon delivery deletion');
+      }
+    }
+
+    await prisma.emailDelivery.delete({
+      where: { id: deliveryId }
+    });
+
+    return {
+      id: deliveryId,
+      message: 'Delivery deleted successfully'
+    };
+  }
+
+  /**
+   * Updates an existing campaign
+   */
+  public async updateCampaign(userId: string, campaignId: string, payload: {
+    subject?: string;
+    bodyText?: string;
+    bodyHtml?: string | null;
+    hourlyLimit?: number;
+    delayBetweenEmailsSeconds?: number;
+  }) {
+    const campaign = await prisma.emailCampaign.findFirst({
+      where: { id: campaignId, userId }
+    });
+
+    if (!campaign) {
+      throw new NotFoundError(`Campaign ${campaignId} not found or unauthorized`);
+    }
+
+    const updated = await prisma.emailCampaign.update({
+      where: { id: campaignId },
+      data: {
+        subject: payload.subject !== undefined ? payload.subject : campaign.subject,
+        bodyText: payload.bodyText !== undefined ? payload.bodyText : campaign.bodyText,
+        bodyHtml: payload.bodyHtml !== undefined ? payload.bodyHtml : campaign.bodyHtml,
+        hourlyLimit: payload.hourlyLimit !== undefined ? payload.hourlyLimit : campaign.hourlyLimit,
+        delayBetweenEmailsSeconds: payload.delayBetweenEmailsSeconds !== undefined ? payload.delayBetweenEmailsSeconds : campaign.delayBetweenEmailsSeconds
+      }
+    });
+
+    return {
+      id: updated.id,
+      subject: updated.subject,
+      bodyText: updated.bodyText,
+      hourlyLimit: updated.hourlyLimit,
+      delayBetweenEmailsSeconds: updated.delayBetweenEmailsSeconds,
+      updatedAt: updated.updatedAt.toISOString()
+    };
+  }
+
+  /**
+   * Pauses all pending deliveries for a campaign
+   */
+  public async pauseCampaign(userId: string, campaignId: string) {
+    const campaign = await prisma.emailCampaign.findFirst({
+      where: { id: campaignId, userId }
+    });
+
+    if (!campaign) {
+      throw new NotFoundError(`Campaign ${campaignId} not found or unauthorized`);
+    }
+
+    const pendingDeliveries = await prisma.emailDelivery.findMany({
+      where: {
+        campaignId,
+        status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED_DELAYED] }
+      }
+    });
+
+    for (const del of pendingDeliveries) {
+      try {
+        await emailQueueManager.removeJob(del.idempotencyKey);
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    await prisma.emailDelivery.updateMany({
+      where: {
+        campaignId,
+        status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED_DELAYED] }
+      },
+      data: {
+        status: EmailStatus.RATE_LIMITED_DELAYED,
+        errorMessage: 'Campaign paused by user'
+      }
+    });
+
+    return {
+      id: campaignId,
+      status: 'Paused',
+      pausedCount: pendingDeliveries.length
+    };
+  }
+
+  /**
+   * Resumes a paused campaign
+   */
+  public async resumeCampaign(userId: string, campaignId: string) {
+    const campaign = await prisma.emailCampaign.findFirst({
+      where: { id: campaignId, userId },
+      include: { sender: true }
+    });
+
+    if (!campaign) {
+      throw new NotFoundError(`Campaign ${campaignId} not found or unauthorized`);
+    }
+
+    const pausedDeliveries = await prisma.emailDelivery.findMany({
+      where: {
+        campaignId,
+        status: EmailStatus.RATE_LIMITED_DELAYED
+      }
+    });
+
+    let reScheduledCount = 0;
+    const now = Date.now();
+
+    for (let i = 0; i < pausedDeliveries.length; i++) {
+      const del = pausedDeliveries[i];
+      const targetTime = new Date(now + (i * campaign.delayBetweenEmailsSeconds * 1000));
+
+      await prisma.emailDelivery.update({
+        where: { id: del.id },
+        data: {
+          status: EmailStatus.SCHEDULED,
+          errorMessage: null,
+          scheduledFor: targetTime
+        }
+      });
+
+      try {
+        await emailQueueManager.enqueueEmail({
+          deliveryId: del.id,
+          campaignId: del.campaignId,
+          userId: del.userId,
+          senderId: del.senderId,
+          recipientEmail: del.recipientEmail,
+          recipientName: del.recipientName || undefined,
+          subject: campaign.subject,
+          bodyText: campaign.bodyText,
+          bodyHtml: campaign.bodyHtml || undefined,
+          trackingToken: del.trackingToken,
+          scheduledFor: targetTime.toISOString(),
+          idempotencyKey: del.idempotencyKey
+        }, Math.max(0, targetTime.getTime() - now));
+        reScheduledCount++;
+      } catch (err) {
+        logger.error({ deliveryId: del.id, err }, 'Failed to re-enqueue delivery on campaign resume');
+      }
+    }
+
+    return {
+      id: campaignId,
+      status: 'Active',
+      resumedCount: reScheduledCount
+    };
+  }
+
+  /**
+   * Cancels all pending deliveries for a campaign
+   */
+  public async cancelCampaign(userId: string, campaignId: string) {
+    const campaign = await prisma.emailCampaign.findFirst({
+      where: { id: campaignId, userId }
+    });
+
+    if (!campaign) {
+      throw new NotFoundError(`Campaign ${campaignId} not found or unauthorized`);
+    }
+
+    const pendingDeliveries = await prisma.emailDelivery.findMany({
+      where: {
+        campaignId,
+        status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED_DELAYED] }
+      }
+    });
+
+    for (const del of pendingDeliveries) {
+      try {
+        await emailQueueManager.removeJob(del.idempotencyKey);
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    await prisma.emailDelivery.updateMany({
+      where: {
+        campaignId,
+        status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED_DELAYED] }
+      },
+      data: {
+        status: EmailStatus.CANCELLED,
+        errorMessage: 'Campaign cancelled by user'
+      }
+    });
+
+    return {
+      id: campaignId,
+      status: 'Cancelled',
+      cancelledCount: pendingDeliveries.length
+    };
+  }
+
+  /**
+   * Deletes a campaign and cleans up queued jobs
+   */
+  public async deleteCampaign(userId: string, campaignId: string) {
+    const campaign = await prisma.emailCampaign.findFirst({
+      where: { id: campaignId, userId }
+    });
+
+    if (!campaign) {
+      throw new NotFoundError(`Campaign ${campaignId} not found or unauthorized`);
+    }
+
+    const pendingDeliveries = await prisma.emailDelivery.findMany({
+      where: {
+        campaignId,
+        status: { in: [EmailStatus.SCHEDULED, EmailStatus.RATE_LIMITED_DELAYED] }
+      }
+    });
+
+    for (const del of pendingDeliveries) {
+      try {
+        await emailQueueManager.removeJob(del.idempotencyKey);
+      } catch (err) {
+        // ignore
+      }
+    }
+
+    await prisma.emailCampaign.delete({
+      where: { id: campaignId }
+    });
+
+    return {
+      id: campaignId,
+      message: 'Campaign and associated delivery records deleted successfully'
     };
   }
 }

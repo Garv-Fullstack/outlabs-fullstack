@@ -15,5 +15,26 @@ export const senderApi = {
    */
   createSender: async (payload: CreateSenderPayload): Promise<SenderOption> => {
     return apiClient.post<SenderOption>('/senders', payload);
+  },
+
+  /**
+   * Updates an existing sender account
+   */
+  updateSender: async (id: string, payload: Partial<CreateSenderPayload>): Promise<SenderOption> => {
+    return apiClient.put<SenderOption>(`/senders/${id}`, payload);
+  },
+
+  /**
+   * Toggles active / inactive status of a sender
+   */
+  toggleSenderStatus: async (id: string): Promise<SenderOption> => {
+    return apiClient.patch<SenderOption>(`/senders/${id}/status`, {});
+  },
+
+  /**
+   * Deletes a sender account after queue safety check
+   */
+  deleteSender: async (id: string): Promise<{ id: string; message: string }> => {
+    return apiClient.delete<{ id: string; message: string }>(`/senders/${id}`);
   }
 };
