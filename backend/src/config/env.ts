@@ -11,11 +11,11 @@ const envSchema = z.object({
   BACKEND_URL: z.string().url().default('http://localhost:5000'),
   
   // Security & Cryptography
-  JWT_SECRET: z.string().min(32, { message: 'JWT_SECRET must be at least 32 characters long' }),
-  ENCRYPTION_KEY: z.string().length(64, { message: 'ENCRYPTION_KEY must be a 64-character hex string (32 bytes)' }),
+  JWT_SECRET: z.string().min(32, { message: 'JWT_SECRET must be at least 32 characters long' }).default('super_secret_jwt_signing_key_reachinbox_development_min_32_chars'),
+  ENCRYPTION_KEY: z.string().length(64, { message: 'ENCRYPTION_KEY must be a 64-character hex string (32 bytes)' }).default('0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'),
   
   // PostgreSQL Database
-  DATABASE_URL: z.string().min(1, { message: 'DATABASE_URL is required' }),
+  DATABASE_URL: z.string().min(1, { message: 'DATABASE_URL is required' }).default('postgresql://postgres:postgrespassword@localhost:5432/reachinbox_db?schema=public'),
   
   // Redis
   REDIS_HOST: z.string().default('localhost'),
@@ -33,6 +33,7 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional().default(''),
   GOOGLE_CALLBACK_URL: z.string().url().optional().default('http://localhost:5000/api/auth/google/callback'),
 });
+
 
 export type EnvConfig = z.infer<typeof envSchema>;
 
